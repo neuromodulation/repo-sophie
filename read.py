@@ -40,27 +40,32 @@ optimizer1 = torch.optim.SGD(model1.parameters(), lr=0.001)
 class EEGCNNRegr(torch.nn.Module):
     def __init__(self):
         super(EEGCNNRegr, self).__init__()
-        self.conv1 = torch.nn.Conv2d(6, 16, kernel_size=(3, 3), stride=1, padding=1)
+        self.conv1d = torch.nn.Conv1d(6, 16, kernel_size=3, stride=1)
         self.act1 = torch.nn.ReLU()
-        self.pool1 = torch.nn.MaxPool2d(2)
+        self.pool1 = torch.nn.MaxPool1d(2)
 
-        self.conv2 = torch.nn.Conv2d(16, 32, kernel_size=(3, 3), stride=1, padding=1)
+        self.conv2d = torch.nn.Conv2d(1, 32, kernel_size=(3, 3), padding=1)
         self.act2 = torch.nn.ReLU()
         self.pool2 = torch.nn.MaxPool2d(2)
 
         self.flat = torch.nn.Flatten()
-
-        self.fc1 = torch.nn.Linear(16*6500, 100)
-        self.act4 = torch.nn.ReLU()
+        self.fc1 = None
+        self.act3 = torch.nn.ReLU()
         self.drop1 = torch.nn.Dropout(0.25)
         self.fc2 = torch.nn.Linear(100, 1)
 
     def forward(self, x):
-        x = self.act1(self.conv1(x))
+        x = self.act1(self.conv1d(x))
         x = self.pool1(x)
-        x = self.act2(self.conv2(x))
+
+        x = x.unsqueeze(1)
+        x = self.act2(self.conv2d(x))
         x = self.pool2(x)
-        x = self.act3(self.conv3(x))
+
+        if self.fc1 is None:
+            features = x.view(x.size(0), -1).size(1)
+            self.fc1 = torch.nn.Linear(features, 100)
+            
         x = self.flat(x)
         x = self.act3(self.fc1(x))
         x = self.drop1(x)
