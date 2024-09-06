@@ -4,7 +4,7 @@ import torch.nn
 class EEGCNNRegr(torch.nn.Module):
     def __init__(self):
         super(EEGCNNRegr, self).__init__()
-        self.conv1d = torch.nn.Conv1d(6, 16, kernel_size=3, stride=1)
+        self.conv1d = torch.nn.Conv1d(6, 16, kernel_size=3, stride=1, padding=1)
         self.act1 = torch.nn.ReLU()
         self.pool1 = torch.nn.MaxPool1d(2)
 
@@ -16,7 +16,7 @@ class EEGCNNRegr(torch.nn.Module):
         self.fc1 = None
         self.act3 = torch.nn.ReLU()
         self.drop1 = torch.nn.Dropout(0.25)
-        self.fc2 = torch.nn.Linear(100, 1)
+        self.fc2 = torch.nn.Linear(100, 130001)
 
     def forward(self, x):
         x = self.act1(self.conv1d(x))
@@ -34,6 +34,6 @@ class EEGCNNRegr(torch.nn.Module):
         x = self.act3(self.fc1(x))
         x = self.drop1(x)
         x = self.fc2(x)
-        return x
+        return x.view(-1, 1, 130001)
     
     
