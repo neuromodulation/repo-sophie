@@ -5,6 +5,7 @@ import numpy as np
 from cnnmodel import *
 from linearRegr import *
 from read_data import *
+import matplotlib.pyplot as plt
 
 
 model1 = EEGRegression()
@@ -15,14 +16,25 @@ model2 = EEGCNNRegr()
 lossfunc2 = torch.nn.MSELoss()
 optimizer2 = torch.optim.SGD(model2.parameters(), lr=0.1)
 
-for i in range(100): 
+loss_values = []
+q = 1000
+for i in range(q): 
     pred_y = model2(x_data)
     loss = lossfunc2(pred_y, y_data)
 
     optimizer2.zero_grad()
     loss.backward()
     optimizer2.step()
+    loss_values.append(loss.item())
+
     if i % 10 == 0:
         print('epoch {}, loss {}'.format(i, loss.item()))
+
+torch.save(model2.state_dict(), f"model_{q}_epochs.pth")
+
+#plt.plot(x_data, loss_values) "module" object is not callable
+#plt.xlabel("epochs")
+#plt.ylabel("loss")
+#plt.show()
+
 #laptop too slow to see, if it rlly works, loss reduction of about 0.0011 on 100 epochs (not quite representative)
-#target [1, 1, 130001] & input [1, 1] size not the same
