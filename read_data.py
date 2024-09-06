@@ -20,6 +20,5 @@ target, time = raw[target_name, :]
 x_data = torch.stack(ecogs, dim=1).unsqueeze(0) #just testing 4 now
 x_data = (x_data - x_data.mean()) / x_data.std()
 x_data = x_data.permute(0, 2, 1)
-y_data = torch.tensor(time.T, dtype=torch.float32).view(1, 1, 130001) 
+y_data = torch.tensor(target.T, dtype=torch.float32).view(1, 1, 130001) #target.T or time.T?
 
-print(data)
