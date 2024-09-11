@@ -7,11 +7,14 @@ from linearRegr import *
 from read_data import *
 import matplotlib.pyplot as plt
 
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#print(f"training on {device}")
 
 model1 = EEGRegression()
 lossfunc1 = torch.nn.MSELoss()
 optimizer1 = torch.optim.SGD(model1.parameters(), lr=0.001)
 
+#model2 = EEGCNNRegr().to(device)
 model2 = EEGCNNRegr()
 lossfunc2 = torch.nn.MSELoss()
 optimizer2 = torch.optim.SGD(model2.parameters(), lr=0.1)
@@ -20,6 +23,7 @@ start_epoch = 0
 pretrained_model_path = "model_1000_epochs.pth"
 
 try:
+    #breakpoint = torch.load(pretrained_model_path, map_location=device)
     breakpoint = torch.load(pretrained_model_path)
     model2.load_state_dict(breakpoint["model_state_dict"])
     optimizer2.load_state_dict(breakpoint["optimizer_state_dict"])
@@ -27,6 +31,9 @@ try:
     print(f"starting training with epoch {start_epoch}")
 except FileNotFoundError:
     print("starting training new")
+
+#x_data = x_data.to(device)
+#y_data = y_data.to(device)
 
 loss_values = []
 q = 21

@@ -1,3 +1,6 @@
+*.eeg
+*.vhdr
+*.vmrk
 *.pth 
 
 # Byte-compiled / optimized / DLL files

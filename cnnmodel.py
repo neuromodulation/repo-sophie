@@ -13,7 +13,7 @@ class EEGCNNRegr(torch.nn.Module):
         self.pool2 = torch.nn.MaxPool2d(2)
 
         self.flat = torch.nn.Flatten()
-        self.fc1 = None
+        self.fc1 = torch.nn.Linear(8320000, 100)
         self.act3 = torch.nn.ReLU()
         self.drop1 = torch.nn.Dropout(0.25)
         self.fc2 = torch.nn.Linear(100, 130001)
