@@ -5,10 +5,13 @@ from datasets import load_dataset
 import librosa
 from sklearn.model_selection import train_test_split
 
+#
+#before starting the code, u have to $env:PYTHONUTF8="1" in Terminal (apparently only runs with UTF8)
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"trains on {device}")
 
-processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h")
+processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h", "en", split="train", trust_remote_code=True)
 
 def preprocess_function(batch):
     speech_array, sampling_rate = sf.read(batch["path"])
@@ -27,8 +30,8 @@ def preprocess_function(batch):
 def main():
 
 #gitignore: ganzen ordner? wegen transformern & rye container stuff
-#is now training on russian (because why not), "en" for english, "de" for german
-    dataset = load_dataset("mozilla-foundation/common_voice_11_0", "ru", split="train", trust_remote_code=True) 
+#is now training on english, "ru" for russian, "de" for german
+    dataset = load_dataset("mozilla-foundation/common_voice_11_0", "en", split="train", trust_remote_code=True) 
     df = dataset.to_pandas()
     train_dataset, eval_dataset = train_test_split(df, test_size=0.2, random_state=42)
     train_ds = dataset.from_pandas(train_dataset)

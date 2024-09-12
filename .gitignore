@@ -1,3 +1,9 @@
+transformers/
+results/
+data/
+logs/
+*.lock
+*.toml
 *.eeg
 *.vhdr
 *.vmrk
