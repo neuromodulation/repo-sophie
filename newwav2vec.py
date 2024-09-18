@@ -152,7 +152,7 @@ def main():
         return {"wer": wer}
     
     model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base", gradient_checkpointing=True, ctc_loss_reduction="mean", pad_token_id=processor.tokenizer.pad_token_id)
-    model.freeze_feature_extractor()
+    model.freeze_feature_encoder()
 
     from transformers import TrainingArguments
 
@@ -161,7 +161,7 @@ def main():
         output_dir="./wav2vec2-base-timit-demo",
         group_by_length=True,
         per_device_train_batch_size=32,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         num_train_epochs=30,
         fp16=True,
         save_steps=500,
@@ -172,14 +172,14 @@ def main():
         warmup_steps=1000,
         save_total_limit=2,
         )
-
+    
     trainer = Trainer(
         model=model,
         data_collator=data_collator,
         args=training_args,
         compute_metrics=compute_metrics,
-        train_dataset=timit_prepared["train"],
-        eval_dataset=timit_prepared["test"],
+        train_dataset=timit_prepared["validation"], #i kbnow ur supposed to split the data, but we just testing the hardware for now
+        eval_dataset=timit_prepared["validation"],
         tokenizer=processor.feature_extractor,
     )
     

@@ -15,7 +15,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
 #labeln mit videoaufnahmen, für das erkennen netz trainieren, mit generator & discriminator? 
 
 #Dataset is 7*73 large, but still torch.OutOfMemoryError
-#before starting the code, u have to $env:PYTHONUTF8="1" in Terminal (apparently only runs with UTF8)
+#if error charmap codec cant decode byte: $env:PYTHONUTF8="1" in Terminal (apparently only runs with UTF8)
 #maybe also $env:PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" for optimized training
 
 torch.cuda.empty_cache()
