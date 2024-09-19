@@ -2,6 +2,8 @@ transformers/
 results/
 data/
 logs/
+wav2vec2-base-timit-demo/
+*.json
 *.toml
 *.eeg
 *.vhdr

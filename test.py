@@ -13,7 +13,7 @@ def preprocess_function(batch):
     if sampling_rate != 16000:
         speech_array = librosa.resample(speech_array, orig_sr=sampling_rate, target_sr=16000)
 
-    inputs = processor(speech_array, sampling_rate=16000, return_tensors="pt", padding=True)
+    inputs = processor(speech_array, sampling_rate=16000, return_tensors="pt", padding=True, trust_remote_code=True)
 
     with processor.as_target_processor():
         labels = processor(batch["sentence"], return_tensors="pt").input_ids
@@ -21,7 +21,7 @@ def preprocess_function(batch):
     inputs["labels"] = labels
     return inputs
 
-load_dataset_builder()
+load_dataset_builder("mozilla-foundation/common_voice_11_0", trust_remote_code=True)
 dataset = load_dataset("mozilla-foundation/common_voice_11_0", "en", split="train", trust_remote_code=True) 
 df = dataset.to_pandas()
 train_dataset, eval_dataset = train_test_split(df, test_size=0.2, random_state=42)
