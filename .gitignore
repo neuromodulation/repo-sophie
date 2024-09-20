@@ -3,6 +3,7 @@ results/
 data/
 logs/
 wav2vec2-base-timit-demo/
+wav2vec2-without-pretraining-demo/
 *.json
 *.toml
 *.eeg
