@@ -4,6 +4,9 @@ data/
 logs/
 wav2vec2-base-timit-demo/
 wav2vec2-without-pretraining-demo/
+data/
+notes.txt
+test.py
 *.json
 *.toml
 *.eeg

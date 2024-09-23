@@ -133,11 +133,9 @@ def main():
 
         return {"wer": wer}
 
-    # Entfernen von gradient_checkpointing aus der Initialisierung des Modells
     model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base", ctc_loss_reduction="mean", pad_token_id=processor.tokenizer.pad_token_id)
     
     model.freeze_feature_encoder()
-    # Gradient Checkpointing hier aktivieren
     model.gradient_checkpointing_enable()
 
     training_args = TrainingArguments(
