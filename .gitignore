@@ -7,6 +7,7 @@ wav2vec2-without-pretraining-demo/
 data/
 notes.txt
 test.py
+LJSpeech-1.1/
 *.json
 *.toml
 *.eeg
