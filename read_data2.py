@@ -7,6 +7,9 @@ from datasets import Dataset
 channel_names = ['ECOG_RIGHT_0', 'ECOG_RIGHT_1', 'ECOG_RIGHT_2', 'ECOG_RIGHT_3', 'ECOG_RIGHT_4', 'ECOG_RIGHT_5']
 target_name = "MOV_LEFT_CLEAN"
 vhdr_path = "data\sub-000_ses-right_task-force_run-0_ieeg.vhdr"
+# time split few secs, prop w/ overlap
+#reading all files with .vhdr ending
+# maybe streaming=true to iterate 
 
 class BIDSLoader:
     def __init__(self, vhdr_path, channel_names, target_name, preload=True):

@@ -6,7 +6,6 @@ wav2vec2-base-timit-demo/
 wav2vec2-without-pretraining-demo/
 data/
 notes.txt
-test.py
 LJSpeech-1.1/
 *.json
 *.toml
@@ -14,6 +13,7 @@ LJSpeech-1.1/
 *.vhdr
 *.vmrk
 *.pth 
+testing.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
