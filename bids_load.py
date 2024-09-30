@@ -68,6 +68,7 @@ import mne
 import torch
 from pathlib import Path
 from torch.utils.data import Dataset
+import numpy
 
 class BIDSBrainVisionDataset(Dataset):
     def __init__(self, directory, channel_names, target_name, window_size=2.0, overlap=0.0, preload=True): #preload=False for goin easy on the RAM
@@ -96,9 +97,10 @@ class BIDSBrainVisionDataset(Dataset):
         x_data = torch.stack(ecogs, dim=1).unsqueeze(0)
         x_data = (x_data - x_data.mean()) / x_data.std()
         x_data = x_data.permute(0, 2, 1)
+        # x_data = x_data.mean(dim=1, keepdim=True) ####################################################
 
-        y_data = torch.tensor(target.T, dtype=torch.float32).view(1, 1, -1)
-
+        y_data = torch.tensor(target.T, dtype=torch.float32).reshape(1, 1, -1)
+#ydata: torch.Size([1, 1, 130001]), xdata: torch.Size([1, 6, 130001])
         return x_data, y_data, raw.info['sfreq']
     
     def _create_sliding_windows(self, data, window_size, overlap, sfreq):
@@ -110,12 +112,13 @@ class BIDSBrainVisionDataset(Dataset):
         for start in range(0, data_length - step + 1, step - overlap_step):
             stop = start + step
             windows.append(data[:, :, start:stop])
+            # print(f"window size: {window_size}")
         
         return windows
     
     def _prepare_dataset(self):
         for filepath in self.filepaths:
-            print(f"loadint file: {filepath}")
+            print(f"loading file: {filepath}")
             x_data, y_data, sfreq = self._load_brainvision_file(filepath)
             
             x_windows = self._create_sliding_windows(x_data, self.window_size, self.overlap, sfreq)
@@ -138,9 +141,9 @@ dataset = BIDSBrainVisionDataset(
     channel_names=channel_names,
     target_name=target_name,
     window_size=2.0,
-    overlap=0.5
+    overlap=0.0
 )
 
-for i in range(5):
+for i in range(3):
     x, y = dataset[i]
     print(f"window {i}: x-data {x.shape}, y-data {y.shape}")

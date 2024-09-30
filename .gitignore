@@ -7,6 +7,7 @@ wav2vec2-without-pretraining-demo/
 data/
 notes.txt
 LJSpeech-1.1/
+wav2vec2-demo/
 *.json
 *.toml
 *.eeg
@@ -14,6 +15,7 @@ LJSpeech-1.1/
 *.vmrk
 *.pth 
 testing.py
+*.lock
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
