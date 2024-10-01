@@ -64,6 +64,8 @@
 # print(x_windows[0])
 # print(y_windows[0])
 
+
+#datashape in data
 import mne
 import torch
 from pathlib import Path
@@ -90,30 +92,32 @@ class BIDSBrainVisionDataset(Dataset):
 
         for channel in self.channel_names:
             data, _ = raw[channel, :]
-            ecogs.append(torch.tensor(data, dtype=torch.float32).squeeze())
+            ecogs.append(torch.tensor(data, dtype=torch.float32))
 
         target, _ = raw[self.target_name, :]
 
-        x_data = torch.stack(ecogs, dim=1).unsqueeze(0)
+        x_data = torch.stack(ecogs, dim=1).unsqueeze(0)  ####maybe worng stack (after permuting?)
         x_data = (x_data - x_data.mean()) / x_data.std()
-        x_data = x_data.permute(0, 2, 1)
+        x_data = x_data.squeeze(1)
+        # x_data = x_data.permute(0, 2, 1)
         # x_data = x_data.mean(dim=1, keepdim=True) ####################################################
 
         y_data = torch.tensor(target.T, dtype=torch.float32).reshape(1, 1, -1)
 #ydata: torch.Size([1, 1, 130001]), xdata: torch.Size([1, 6, 130001])
         return x_data, y_data, raw.info['sfreq']
     
-    def _create_sliding_windows(self, data, window_size, overlap, sfreq):
+    def _sliding_windows(self, data, window_size, overlap, sfreq):
         step = int(window_size * sfreq)
         overlap_step = int(overlap * sfreq)
         data_length = data.shape[2]
         windows = []
 
-        for start in range(0, data_length - step + 1, step - overlap_step):
-            stop = start + step
-            windows.append(data[:, :, start:stop])
+        for x in range(0, data_length - step + 1, step - overlap_step):
+            stop = x + step
+            print(f"window from {x} to {stop}")
+            windows.append(data[:, :, x:stop])
             # print(f"window size: {window_size}")
-        
+        print(f"number of windows={len(windows)}")
         return windows
     
     def _prepare_dataset(self):
@@ -121,11 +125,12 @@ class BIDSBrainVisionDataset(Dataset):
             print(f"loading file: {filepath}")
             x_data, y_data, sfreq = self._load_brainvision_file(filepath)
             
-            x_windows = self._create_sliding_windows(x_data, self.window_size, self.overlap, sfreq)
-            y_windows = self._create_sliding_windows(y_data, self.window_size, self.overlap, sfreq)
+            x_windows = self._sliding_windows(x_data, self.window_size, self.overlap, sfreq)
+            y_windows = self._sliding_windows(y_data, self.window_size, self.overlap, sfreq)
             
             for x_window, y_window in zip(x_windows, y_windows):
                 self.windows.append((x_window, y_window))
+            print(f"len(windows)={len(self.windows)}")
 
     def __len__(self):
         return len(self.windows)

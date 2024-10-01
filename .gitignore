@@ -16,6 +16,7 @@ wav2vec2-demo/
 *.pth 
 testing.py
 *.lock
+wav2vec2-pretrained-demo/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
