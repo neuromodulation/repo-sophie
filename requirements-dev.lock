@@ -120,7 +120,6 @@ packaging==24.1
     # via matplotlib
     # via mne
     # via pooch
-    # via tensorboard
     # via transformers
 pandas==2.2.3
     # via datasets
@@ -131,7 +130,7 @@ platformdirs==4.3.6
     # via pooch
 pooch==1.8.2
     # via mne
-protobuf==5.28.2
+protobuf==4.25.5
     # via tensorboard
 psutil==6.0.0
     # via accelerate
@@ -171,7 +170,7 @@ soundfile==0.12.1
     # via repo-sophie-1
 sympy==1.13.3
     # via torch
-tensorboard==2.18.0
+tensorboard==2.17.0
     # via repo-sophie-1
 tensorboard-data-server==0.7.2
     # via tensorboard

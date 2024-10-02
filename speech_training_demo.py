@@ -99,12 +99,14 @@ from transformers import (
 from transformers.models.wav2vec2.modeling_wav2vec2 import _compute_mask_indices, _sample_negative_indices
 from transformers.utils import send_example_telemetry
 
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter, writer
 from torch.utils.data import DataLoader, TensorDataset
 
 #product quantization in code
 
 logger = get_logger(__name__)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Training on {device}")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a text classification task")
@@ -344,7 +346,7 @@ def parse_args():
 
     return args
 
-writer = SummaryWriter(log_dir="/logs")
+writer = SummaryWriter(log_dir="logging_events")
 @dataclass
 class DataCollatorForWav2Vec2Pretraining:
     """
@@ -518,6 +520,7 @@ def main():
             trust_remote_code=True, #################################################################################################################################
         )
         datasets_splits.append(dataset_split)
+        datasets_splits.to(device) ###############################################################################################################################
 
     # Next, we concatenate all configurations and splits into a single training dataset
     raw_datasets = DatasetDict()
@@ -614,7 +617,7 @@ def main():
         )
 
     # initialize random model
-    model = Wav2Vec2ForPreTraining(config)
+    model = Wav2Vec2ForPreTraining(config).to(device)
 
     # Activate gradient checkpointing if needed
     if args.gradient_checkpointing:
@@ -637,6 +640,7 @@ def main():
         shuffle=True,
         collate_fn=data_collator,
         batch_size=args.per_device_train_batch_size,
+        pin_memory=True
     )
     eval_dataloader = DataLoader(
         vectorized_datasets["validation"], collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
@@ -700,7 +704,7 @@ def main():
             percent_masked = num_losses / sub_attention_mask.sum()
 
             # forward
-            outputs = model(**batch)
+            outputs = model(**batch).to(device)
 
             # divide loss by gradient accumulation steps since gradients
             # are accumulated for multiple backward passes in PyTorch
@@ -755,6 +759,7 @@ def main():
 
             # 6. Log all results
             if (step + 1) % (args.gradient_accumulation_steps * args.logging_steps) == 0:
+                print("all good") #never during training
                 loss.detach()
                 outputs.contrastive_loss.detach()
                 outputs.diversity_loss.detach()
@@ -780,12 +785,18 @@ def main():
                     log_str += "| {}: {:.3e}".format(k, v.item())
 
                 if accelerator.is_local_main_process:
+                    print("still all good") #never 
                     progress_bar.write(log_str)
+
                     if is_wandb_available():
                         wandb.log(train_logs)
 
-                    for k, v in train_logs.items():
-                        writer.add_scalar(k, v.item(), step)
+                    writer.add_scalar("loss/train", float(train_logs["loss"]), step)
+                    writer.add_scalar("div_loss/train", float(train_logs["div_loss"]), step)
+                    writer.add_scalar("learning_rate/train", float(train_logs["lr"].item()), step)
+                    writer.add_scalar("grad_norm/train", float(train_logs["grad_norm"].item()), step)
+                    writer.add_scalar("test_value", 1.0, 0)
+                    writer.flush()
 
             # save model every `args.saving_steps` steps
             if (step + 1) % (args.gradient_accumulation_steps * args.saving_steps) == 0:
@@ -804,7 +815,7 @@ def main():
                         repo_type="model",
                         token=args.hub_token,
                     )
-            writer.close()
+
             # if completed steps > `args.max_train_steps` stop
             if completed_steps >= args.max_train_steps:
                 break

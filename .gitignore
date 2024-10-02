@@ -17,6 +17,9 @@ wav2vec2-demo/
 testing.py
 *.lock
 wav2vec2-pretrained-demo/
+tb.py
+runs/
+logging_events/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
