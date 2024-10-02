@@ -754,6 +754,12 @@ def main():
                 else:
                     model.set_gumbel_temperature(gumbel_temperature)
 
+                if step % 100 == 0:
+                    if accelerator.is_local_main_process:
+                        writer.add_scalar("loss/train", float((loss * args.gradient_accumulation_steps) / num_losses), step)
+                        writer.flush()
+                        print("yay its logging")
+                        
                 progress_bar.update(1)
                 completed_steps += 1
 
