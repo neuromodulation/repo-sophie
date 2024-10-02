@@ -120,6 +120,7 @@ packaging==24.1
     # via matplotlib
     # via mne
     # via pooch
+    # via tensorboard
     # via transformers
 pandas==2.2.3
     # via datasets
@@ -170,7 +171,7 @@ soundfile==0.12.1
     # via repo-sophie-1
 sympy==1.13.3
     # via torch
-tensorboard==2.17.0
+tensorboard==2.18.0
     # via repo-sophie-1
 tensorboard-data-server==0.7.2
     # via tensorboard
@@ -203,6 +204,8 @@ xxhash==3.5.0
     # via evaluate
 yarl==1.13.1
     # via aiohttp
+pip==24.2
+    # via repo-sophie-1
 setuptools==75.1.0
     # via tensorboard
     # via torch

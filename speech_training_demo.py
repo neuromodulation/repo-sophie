@@ -113,7 +113,7 @@ def parse_args():
     parser.add_argument(
         "--dataset_name",
         type=str,
-        default="MLCommons/peoples_speech",
+        default="hf-internal-testing/librispeech_asr_dummy", #  MLCommons/peoples_speech
         help="The name of the dataset to use (via the datasets library).",
     )
     parser.add_argument(
@@ -121,7 +121,7 @@ def parse_args():
         nargs="+",
         type=str,
         required=False,
-        default=["default"],
+        default=["clean"],
         help="The configuration names of the dataset to use (via the datasets library).",
     )
     parser.add_argument(
@@ -129,7 +129,7 @@ def parse_args():
         nargs="+",
         type=str,
         required=False,
-        default=["validation[2%:]", "test[:2%]"], #each about 600h (30k in total)
+        default=["validation", "test"], #each about 600h (30k in total)
         help="The names of the training data set splits to use (via the datasets library).",
     )
     parser.add_argument(
@@ -164,7 +164,7 @@ def parse_args():
     parser.add_argument(
         "--validation_split_percentage",
         type=int,
-        default=1,
+        default=10,
         help="Percentage of training data that should be used for validation if no validation is present in dataset.",
     )
     parser.add_argument(
@@ -176,7 +176,7 @@ def parse_args():
     parser.add_argument(
         "--saving_steps",
         type=int,
-        default=10000,
+        default=10,
         help="Number of steps between each logging",
     )
     parser.add_argument(
@@ -233,7 +233,7 @@ def parse_args():
     parser.add_argument(
         "--max_train_steps",
         type=int,
-        default=20000,
+        default=200,
         help="Total number of training steps to perform. If provided, overrides num_train_epochs.",
     )
     parser.add_argument(
@@ -520,7 +520,7 @@ def main():
             trust_remote_code=True, #################################################################################################################################
         )
         datasets_splits.append(dataset_split)
-        datasets_splits.to(device) ###############################################################################################################################
+        datasets_splits ###############################################################################################################################
 
     # Next, we concatenate all configurations and splits into a single training dataset
     raw_datasets = DatasetDict()
@@ -704,7 +704,7 @@ def main():
             percent_masked = num_losses / sub_attention_mask.sum()
 
             # forward
-            outputs = model(**batch).to(device)
+            outputs = model(**batch) # .to(device)
 
             # divide loss by gradient accumulation steps since gradients
             # are accumulated for multiple backward passes in PyTorch
@@ -759,7 +759,7 @@ def main():
                         writer.add_scalar("loss/train", float((loss * args.gradient_accumulation_steps) / num_losses), step)
                         writer.flush()
                         print("yay its logging")
-                        
+
                 progress_bar.update(1)
                 completed_steps += 1
 
