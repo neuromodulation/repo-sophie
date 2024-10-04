@@ -233,7 +233,9 @@ def parse_args():
     parser.add_argument(
         "--max_train_steps",
         type=int,
-        default=200,
+        default=200
+        
+        ,
         help="Total number of training steps to perform. If provided, overrides num_train_epochs.",
     )
     parser.add_argument(
@@ -597,7 +599,7 @@ def main():
 
         vectorized_datasets = vectorized_datasets.remove_columns("input_length")
 
-    # for large datasets it is advised to run the preprocessing on a
+    # for large datasets it is advised to run the preprocessing on a ######################################################################
     # single machine first with ``args.preprocessing_only`` since there will mostly likely
     # be a timeout when running the script in distributed mode.
     # In a second step ``args.preprocessing_only`` can then be set to `False` to load the
@@ -754,19 +756,20 @@ def main():
                 else:
                     model.set_gumbel_temperature(gumbel_temperature)
 
-                if step % 100 == 0:
-                    if accelerator.is_local_main_process:
-                        writer.add_scalar("loss/train", float((loss * args.gradient_accumulation_steps) / num_losses), step)
-                        writer.flush()
-                        print("yay its logging")
+                # if step % 100 == 0:
+                #     if accelerator.is_local_main_process:
+                #         writer.add_scalar("loss/train", float((loss * args.gradient_accumulation_steps) / num_losses), step)
+                        
+                #         writer.flush()
+                #         print("yay its logging")
 
                 progress_bar.update(1)
                 completed_steps += 1
 
             # 6. Log all results
             if (step + 1) % (args.gradient_accumulation_steps * args.logging_steps) == 0:
-                print("all good") #never during training
-                loss.detach()
+                print("all good")            
+                loss.detach()           
                 outputs.contrastive_loss.detach()
                 outputs.diversity_loss.detach()
 
@@ -791,7 +794,7 @@ def main():
                     log_str += "| {}: {:.3e}".format(k, v.item())
 
                 if accelerator.is_local_main_process:
-                    print("still all good") #never 
+                    print("still all good")
                     progress_bar.write(log_str)
 
                     if is_wandb_available():
