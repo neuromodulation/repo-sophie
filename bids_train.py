@@ -1,71 +1,3 @@
-# import numpy as np
-
-# obj = ([[[ 0.4201,  0.4507,  0.4947,  ...,  0.1017,  0.0806,  0.1255],
-#          [ 0.5390,  0.5352,  0.5218,  ..., -0.6319, -0.6472, -0.6826],
-#          [-0.0212, -0.0021, -0.0097,  ..., -0.5552, -0.5476, -0.5084],
-#          [ 0.1328,  0.1003,  0.0640,  ...,  0.2595,  0.2671,  0.2661],
-#          [-0.7835, -0.8159, -0.8408,  ...,  0.8454,  0.8358,  0.7833],
-#          [-0.2873, -0.2682, -0.2300,  ..., -0.0193,  0.0113,  0.0160]]]), ([[[71.1553, 39.3097, 69.8358,  ..., -0.6130,  0.0000,  0.0000]]])
-
-# # print(type(obj))
-
-# np.array(obj)
-
-# error reproduced
-#in generic.py, line 299, this operation fails, cuz obj is a tuple of 2 tensors without the same shape. maybe i have to modify the whole structure :(
-# from datasets import load_dataset_builder, load_dataset
-# import librosa
-# from transformers import Wav2Vec2Processor
-# import soundfile as sf
-# from sklearn.model_selection import train_test_split
-
-# #processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h")
-# load_dataset_builder("mozilla-foundation/common_voice_11_0")
-
-# def preprocess_function(batch):
-#     speech_array, sampling_rate = sf.read(batch["path"])
-
-#     if sampling_rate != 16000:
-#         speech_array = librosa.resample(speech_array, orig_sr=sampling_rate, target_sr=16000)
-
-#     inputs = processor(speech_array, sampling_rate=16000, return_tensors="pt", padding=True, trust_remote_code=True)
-
-#     with processor.as_target_processor():
-#         labels = processor(batch["sentence"], return_tensors="pt").input_ids
-
-#     inputs["labels"] = labels
-#     return inputs
-
-# load_dataset_builder("mozilla-foundation/common_voice_11_0", trust_remote_code=True)
-# dataset = load_dataset("mozilla-foundation/common_voice_11_0", "en", split="train", trust_remote_code=True) 
-# df = dataset.to_pandas()
-# train_dataset, eval_dataset = train_test_split(df, test_size=0.2, random_state=42)
-# train_ds = dataset.from_pandas(train_dataset)
-# eval_ds = dataset.from_pandas(eval_dataset)
-
-# #processed_dataset = dataset.map(preprocess_function)
-# train_data = train_ds.map(preprocess_function)
-# eval_data = eval_ds.map(preprocess_function)
-# from datasets import load_dataset
-
-# dataset = load_dataset("C:/Users/ICN/Downloads/LJSpeech-1.1.tar.bz2", split="train[:10%]")
-# print(dataset)
-
-#!/usr/bin/env python
-# coding=utf-8
-# Copyright 2021 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-
 """Pre-Training a 🤗 Wav2Vec2 model on unlabeled audio data"""
 
 import argparse
@@ -77,10 +9,13 @@ from typing import Dict, List, Optional, Union
 
 import datasets
 import torch
+import mne
+
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from datasets import DatasetDict, concatenate_datasets, load_dataset
 from huggingface_hub import HfApi
+from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 from tqdm.auto import tqdm
 
@@ -349,6 +284,65 @@ def parse_args():
     return args
 
 writer = SummaryWriter(log_dir="logging_events")
+
+########################################################################################################################################
+class BIDSBrainVisionDataset(Dataset):
+    def __init__(self, directory, channel_names, target_name, window_size=2.0, overlap=0.0, preload=True, feature_extractor=None):
+        self.directory = Path(directory)
+        self.channel_names = channel_names
+        self.target_name = target_name
+        self.window_size = window_size
+        self.overlap = overlap
+        self.preload = preload
+        self.feature_extractor = feature_extractor
+
+        self.filepaths = list(self.directory.glob("*.vhdr"))
+        self.windows = []
+        self._prepare_dataset()
+
+    def _load_bv_file(self, filepath):
+        raw = mne.io.read_raw_brainvision(filepath, preload=self.preload)
+        channels = [ch_name for ch_name in self.channel_names if ch_name in raw.ch_names]
+        ecogs = []
+
+        for channel in channels:
+            data, _ = raw[channel, :]
+            ecogs.append(torch.tensor(data, dtype=torch.float32))
+
+        target, _ = raw[self.target_name, _]
+        y_data = torch.tensor(target.T, dtype=torch.float32).reshape(1, -1)
+        return ecogs, y_data, raw.info["sfreq"], channels
+    
+    def _sliding_windows(self, data, window_size, sfreq):
+        step = int(window_size*sfreq)
+        data_length = data.shape[0]
+        windows = []
+
+        for x in range(0, data_length-step+1):
+            stop = x+step
+            windows.append(data[x:stop])
+        return windows
+    
+    def _prepare_dataset(self):
+        for filepath in self.filepaths:
+            ecog_channels, y_data, sfreq, channels = self._load_bv_file(filepath)
+
+            for channel_name, channel_data in ecog_channels.items():
+                x_windows = self._sliding_windows(channel_data, self.window_size, sfreq)
+                y_windows = self._sliding_windows(y_data.squeeze(0), self.window_size, sfreq)
+                for x_window, y_window in zip(x_windows, y_windows):
+                    self.windows.append((x_window.unsqueeze(0), y_window.unsqueeze(0)))
+    
+    def __len__(self):
+        return len(self.windows)
+    def __getitem__(self, idx):
+        x_window, y_window = self.windows[idx]
+        if self.feature_extractor:
+            inputs = self.feature_extractor(x_window.numpy(), sampling_rate=self.feature_extractor.sampling_rate, return_tensor="pt")
+            x_window = inputs["input_values"][0]
+        return x_window, y_window
+
+#############################################################################################################
 @dataclass
 class DataCollatorForWav2Vec2Pretraining:
     """

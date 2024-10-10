@@ -5,10 +5,16 @@ feature_extractor = Wav2Vec2FeatureExtractor(SequenceFeatureExtractor(FeatureExt
 raw_dataset.map(args): (general with .map(): input size != output size, but all values in output dict gotta have same numb of elements); remove_columns=raw_datasets["train"].column_names removes all columns (except the ones created with .map())
 .map() & .filter() return vectorized_datasets ("train" & "validation" both datasets.arrow_dataset.Dataset type and shape (62,1)&(7,1) -> only coumn is input_values, also dict with lists of floats)
 class DataCollatorForWav2Vec2Pretraining: automatic contrastive loss with masking
-__call__ function: takes in features from feature extractor as list of dicts with data from one example each (either as list[int] or torch.tensor), returns dict of torch.tensors (processed & padded batches)
-one batch contains data: input_values (shape [8, 113600]), attention_mask (same shape) and sub_attention_mask [8, 354] (prop for conv) each as torch.tensor; mask_time_indices (np.ndarray, torch.long) and sampled_negative_indices (np.ndarray [8, 354, 100])
+features: list of dicts (0= {"input_values": [...]}), shape(8, 755) -> 755 variable from batch to batch
+__call__ function: takes in features from feature extractor with data from one example each (either as list[int] or torch.tensor), returns dict of torch.tensors (processed & padded batches)
+one batch contains: data (input_values (shape [8, 113600]), attention_mask (same shape) and sub_attention_mask ([8, 354] (prop for conv)) each as torch.tensor), mask_time_indices (np.ndarray, torch.long) and sampled_negative_indices (np.ndarray [8, 354, 100]) for contrastive learning 
 outputs: torch,tensor
+num_losses: torch.tensor
+outputs=model(**batch) (after loss (line709)) forward pass
+loss is still torch.tensor
+accelerator.backward(loss) for backprop and distributed training
+def multiply_grads() for stable grads i guess
+(with prepare_dataset(batch): "inputs" now contains data(dict) with "input_values"(list with np.ndarrays) and "attention_mask" (also list of np.ndarrays)) still former form in the end
 
-def multiply_grads()
 
 
