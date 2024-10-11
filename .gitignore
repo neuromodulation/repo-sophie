@@ -4,6 +4,7 @@ data/
 logs/
 wav2vec2-base-timit-demo/
 wav2vec2-without-pretraining-demo/
+output_flac/
 data/
 notes.txt
 LJSpeech-1.1/
