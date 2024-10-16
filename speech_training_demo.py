@@ -101,6 +101,7 @@ from transformers.utils import send_example_telemetry
 
 from torch.utils.tensorboard import SummaryWriter, writer
 from torch.utils.data import DataLoader, TensorDataset
+from loadmp3 import BIDSBrainVisionDataset
 
 #product quantization in code
 
@@ -511,44 +512,76 @@ def main():
     # 1. Download and create train, validation dataset
     # We load all dataset configuration and datset split pairs passed in
     # ``args.dataset_config_names`` and ``args.dataset_split_names``
-    datasets_splits = []
-    for dataset_config_name, train_split_name in zip(args.dataset_config_names, args.dataset_split_names):
-        # load dataset
-        dataset_split = load_dataset(
-            args.dataset_name,
-            dataset_config_name,
-            split=train_split_name,
-            cache_dir=args.cache_dir,
-            trust_remote_code=True, #################################################################################################################################
-        )
-        datasets_splits.append(dataset_split)
-        datasets_splits ###############################################################################################################################
+    # datasets_splits = []
+    # for dataset_config_name, train_split_name in zip(args.dataset_config_names, args.dataset_split_names):
+    #     # load dataset
+    #     dataset_split = load_dataset(
+    #         args.dataset_name,
+    #         dataset_config_name,
+    #         split=train_split_name,
+    #         cache_dir=args.cache_dir,
+    #         trust_remote_code=True, #################################################################################################################################
+    #     )
+    #     datasets_splits.append(dataset_split)
+    #     datasets_splits ###############################################################################################################################
 
-    # Next, we concatenate all configurations and splits into a single training dataset
+    # # Next, we concatenate all configurations and splits into a single training dataset
+    # raw_datasets = DatasetDict()
+    # if len(datasets_splits) > 1:
+    #     raw_datasets["train"] = concatenate_datasets(datasets_splits).shuffle(seed=args.seed)
+    # else:
+    #     raw_datasets["train"] = datasets_splits[0]
+
+    # # Take ``args.validation_split_percentage`` from the training dataset for the validation_split_percentage
+    # num_validation_samples = raw_datasets["train"].num_rows * args.validation_split_percentage // 100
+
+    # if num_validation_samples == 0:
+    #     raise ValueError(
+    #         "`args.validation_split_percentage` is less than a single sample "
+    #         f"for {len(raw_datasets['train'])} training samples. Increase "
+    #         "`args.num_validation_split_percentage`. "
+    #     )
+
+    # raw_datasets["validation"] = raw_datasets["train"].select(range(num_validation_samples))
+    # raw_datasets["train"] = raw_datasets["train"].select(range(num_validation_samples, raw_datasets["train"].num_rows))
+###################################################################################################################################################
+    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(args.model_name_or_path)
+    train_dataset = BIDSBrainVisionDataset(
+        directory="data", 
+        channel_names=['ECOG_RIGHT_0', 'ECOG_RIGHT_1', 'ECOG_RIGHT_2', 'ECOG_RIGHT_3', 'ECOG_RIGHT_4', 'ECOG_RIGHT_5'],
+        target_name='MOV_LEFT_CLEAN', 
+        output_dir="output_flac", 
+        feature_extractor=feature_extractor,
+        target_sr=16000 
+    )
+
+    datasets_splits = []
+    datasets_splits.append(train_dataset.hf_dataset)
+     
     raw_datasets = DatasetDict()
     if len(datasets_splits) > 1:
         raw_datasets["train"] = concatenate_datasets(datasets_splits).shuffle(seed=args.seed)
     else:
-        raw_datasets["train"] = datasets_splits[0]
+        raw_datasets["train"] = datasets_splits[0] 
 
-    # Take ``args.validation_split_percentage`` from the training dataset for the validation_split_percentage
-    num_validation_samples = raw_datasets["train"].num_rows * args.validation_split_percentage // 100
+    num_validation_samples = max(1, raw_datasets["train"].num_rows * args.validation_split_percentage // 100)
 
     if num_validation_samples == 0:
         raise ValueError(
             "`args.validation_split_percentage` is less than a single sample "
             f"for {len(raw_datasets['train'])} training samples. Increase "
-            "`args.num_validation_split_percentage`. "
+            "`args.num_validation_split_percentage`."
         )
 
     raw_datasets["validation"] = raw_datasets["train"].select(range(num_validation_samples))
     raw_datasets["train"] = raw_datasets["train"].select(range(num_validation_samples, raw_datasets["train"].num_rows))
+#################################################################################################################################################
 
     # 2. Now we preprocess the datasets including loading the audio, resampling and normalization
     # Thankfully, `datasets` takes care of automatically loading and resampling the audio,
     # so that we just need to set the correct target sampling rate and normalize the input
     # via the `feature_extractor`
-    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(args.model_name_or_path)
+
 
     # make sure that dataset decodes audio with correct sampling rate
     raw_datasets = raw_datasets.cast_column(
