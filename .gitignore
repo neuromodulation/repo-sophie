@@ -1,11 +1,9 @@
 transformers/
 results/
-data/
 logs/
 wav2vec2-base-timit-demo/
 wav2vec2-without-pretraining-demo/
 output_flac/
-data/
 notes.txt
 LJSpeech-1.1/
 wav2vec2-demo/
@@ -14,12 +12,19 @@ wav2vec2-demo/
 *.eeg
 *.vhdr
 *.vmrk
+data/
+rest_data/
 *.pth 
 testing.py
 *.lock
 wav2vec2-pretrained-demo/
 runs/
 logging_events/
+logging_events_real_data/
+logging_events_rest_data/
+rest_output_flac/
+wav2vec2-rest-demo/
+model_001data_25-20-24.safetensors
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

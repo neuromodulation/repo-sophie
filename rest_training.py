@@ -1,73 +1,3 @@
-# import numpy as np
-
-# obj = ([[[ 0.4201,  0.4507,  0.4947,  ...,  0.1017,  0.0806,  0.1255],
-#          [ 0.5390,  0.5352,  0.5218,  ..., -0.6319, -0.6472, -0.6826],
-#          [-0.0212, -0.0021, -0.0097,  ..., -0.5552, -0.5476, -0.5084],
-#          [ 0.1328,  0.1003,  0.0640,  ...,  0.2595,  0.2671,  0.2661],
-#          [-0.7835, -0.8159, -0.8408,  ...,  0.8454,  0.8358,  0.7833],
-#          [-0.2873, -0.2682, -0.2300,  ..., -0.0193,  0.0113,  0.0160]]]), ([[[71.1553, 39.3097, 69.8358,  ..., -0.6130,  0.0000,  0.0000]]])
-
-# # print(type(obj))
-
-# np.array(obj)
-
-# error reproduced
-#in generic.py, line 299, this operation fails, cuz obj is a tuple of 2 tensors without the same shape. maybe i have to modify the whole structure :(
-# from datasets import load_dataset_builder, load_dataset
-# import librosa
-# from transformers import Wav2Vec2Processor
-# import soundfile as sf
-# from sklearn.model_selection import train_test_split
-
-# #processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h")
-# load_dataset_builder("mozilla-foundation/common_voice_11_0")
-
-# def preprocess_function(batch):
-#     speech_array, sampling_rate = sf.read(batch["path"])
-
-#     if sampling_rate != 16000:
-#         speech_array = librosa.resample(speech_array, orig_sr=sampling_rate, target_sr=16000)
-
-#     inputs = processor(speech_array, sampling_rate=16000, return_tensors="pt", padding=True, trust_remote_code=True)
-
-#     with processor.as_target_processor():
-#         labels = processor(batch["sentence"], return_tensors="pt").input_ids
-
-#     inputs["labels"] = labels
-#     return inputs
-
-# load_dataset_builder("mozilla-foundation/common_voice_11_0", trust_remote_code=True)
-# dataset = load_dataset("mozilla-foundation/common_voice_11_0", "en", split="train", trust_remote_code=True) 
-# df = dataset.to_pandas()
-# train_dataset, eval_dataset = train_test_split(df, test_size=0.2, random_state=42)
-# train_ds = dataset.from_pandas(train_dataset)
-# eval_ds = dataset.from_pandas(eval_dataset)
-
-# #processed_dataset = dataset.map(preprocess_function)
-# train_data = train_ds.map(preprocess_function)
-# eval_data = eval_ds.map(preprocess_function)
-# from datasets import load_dataset
-
-# dataset = load_dataset("C:/Users/ICN/Downloads/LJSpeech-1.1.tar.bz2", split="train[:10%]")
-# print(dataset)
-
-#!/usr/bin/env python
-# coding=utf-8
-# Copyright 2021 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-
-"""Pre-Training a 🤗 Wav2Vec2 model on unlabeled audio data"""
-
 import argparse
 import math
 import os
@@ -171,7 +101,7 @@ def parse_args():
     parser.add_argument(
         "--logging_steps",
         type=int,
-        default=2,
+        default=50,
         help="Number of steps between each logging",
     )
     parser.add_argument(
@@ -214,7 +144,7 @@ def parse_args():
     parser.add_argument(
         "--per_device_train_batch_size",
         type=int,
-        default=4,
+        default=8,
         help="Batch size (per device) for the training dataloader.",
     )
     parser.add_argument(
@@ -234,7 +164,7 @@ def parse_args():
     parser.add_argument(
         "--max_train_steps",
         type=int,
-        default=1000
+        default=600
         
         ,
         help="Total number of training steps to perform. If provided, overrides num_train_epochs.",
@@ -260,7 +190,7 @@ def parse_args():
     parser.add_argument(
         "--num_warmup_steps", type=int, default=32000, help="Number of steps for the warmup in the lr scheduler."
     )
-    parser.add_argument("--output_dir", type=str, default="./wav2vec2-pretrained-demo", help="Where to store the final model.")
+    parser.add_argument("--output_dir", type=str, default="./wav2vec2-rest-demo", help="Where to store the final model.")
     parser.add_argument("--seed", type=int, default=0, help="A seed for reproducible training.")
     parser.add_argument(
         "--max_gumbel_temperature",
@@ -333,7 +263,7 @@ def parse_args():
     parser.add_argument(
         "--mask_time_length",
         type=int,
-        default=5,
+        default=10,
         help=(
             "Length of each vector mask span to mask along the time axis in the contrastive task."
             " If omitted, will pull value from model config."
@@ -359,7 +289,7 @@ def sliding_windows(data, window_size, sfreq):
         windows.append(data[x:stop])
     return windows #list
     
-writer = SummaryWriter(log_dir="logging_events_real_data")
+writer = SummaryWriter(log_dir="logging_events_rest_data")
 @dataclass
 class DataCollatorForWav2Vec2Pretraining:
     """
@@ -402,7 +332,7 @@ class DataCollatorForWav2Vec2Pretraining:
     padding: Union[bool, str] = "longest"
     pad_to_multiple_of: Optional[int] = None
     mask_time_prob: Optional[float] = 0.65
-    mask_time_length: Optional[int] = 5
+    mask_time_length: Optional[int] = 10
     window_size_secs: float = 2.0
 
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
@@ -571,11 +501,10 @@ def main():
 
     feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(args.model_name_or_path)
     train_dataset = BIDSBrainVisionDataset(
-    directory="data",
-    output_dir="output_flac",
+    directory="rest_data",
+    output_dir="rest_output_flac",
     feature_extractor=feature_extractor,
-    target_sr=16000,
-    debugging_mode=True
+    target_sr=16000
 )
 
     datasets_splits = []
@@ -708,7 +637,7 @@ def main():
     )
     train_dataloader = DataLoader(
         vectorized_datasets["train"],
-        shuffle=True,  # TODO: check 
+        shuffle=True,
         collate_fn=data_collator,
         batch_size=args.per_device_train_batch_size,
         pin_memory=True
@@ -765,8 +694,7 @@ def main():
     starting_epoch = 0
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
-
-        for step, batch in enumerate(train_dataloader):  # TODO: Check shape of batch
+        for step, batch in enumerate(train_dataloader):
             # compute num of losses
             num_losses = batch["mask_time_indices"].sum()
             sub_attention_mask = batch.pop("sub_attention_mask", None)
