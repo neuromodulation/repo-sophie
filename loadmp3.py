@@ -90,14 +90,14 @@ class BIDSBrainVisionDataset(Dataset):
     def __getitem__(self, idx):
         return self.hf_dataset[idx]
 
-feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained("patrickvonplaten/wav2vec2-base-v2")
-train_dataset = BIDSBrainVisionDataset(
-    directory="data",
-    output_dir="output_flac",
-    feature_extractor=feature_extractor,
-    target_sr=16000,
-    debugging_mode=True
-)
+# feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained("patrickvonplaten/wav2vec2-base-v2")
+# train_dataset = BIDSBrainVisionDataset(
+#     directory="data",
+#     output_dir="output_flac",
+#     feature_extractor=feature_extractor,
+#     target_sr=16000,
+#     debugging_mode=True
+# )
     # def _sliding_windows(self, data, window_size, overlap, sfreq):
     #     step = int(window_size * sfreq)
     #     overlap_step = int(overlap * sfreq)
