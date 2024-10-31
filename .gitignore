@@ -25,6 +25,7 @@ logging_events_rest_data/
 rest_output_flac/
 wav2vec2-rest-demo/
 model_001data_25-20-24.safetensors
+wandb/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -575,7 +575,7 @@ def main():
     output_dir="output_flac",
     feature_extractor=feature_extractor,
     target_sr=16000,
-    debugging_mode=False
+    debugging_mode=True
 )
 
     datasets_splits = []
