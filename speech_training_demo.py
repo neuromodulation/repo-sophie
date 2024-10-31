@@ -655,6 +655,7 @@ def main():
         #     )
 
         vectorized_datasets = vectorized_datasets.remove_columns("input_length")
+        # vectorized_datasets = next(iter(DataLoader))
 
     # for large datasets it is advised to run the preprocessing on a ######################################################################
     # single machine first with ``args.preprocessing_only`` since there will mostly likely
