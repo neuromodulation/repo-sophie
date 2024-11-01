@@ -403,21 +403,24 @@ class DataCollatorForWav2Vec2Pretraining:
     pad_to_multiple_of: Optional[int] = None
     mask_time_prob: Optional[float] = 0.65
     mask_time_length: Optional[int] = 5
-    window_size_secs: float = 2.0
+    window_size_secs: float = 2.0 ########## bei windwos: 2 mal 16000=32000/input_values(320000) = 10 windows per batch
 
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         wind_features = []
         for feature in features:
             input_values = feature["input_values"]
 
-            windows = sliding_windows(
-                input_values,
+            windows = sliding_windows( #windowslen = 10, window len alwys 32000
+                input_values, # len=320000
                 self.window_size_secs,
                 self.feature_extractor.sampling_rate)
             
             for window in windows:
                 wind_input = self.feature_extractor(window, sampling_rate=self.feature_extractor.sampling_rate, return_tensors="pt")
                 wind_features.append({"input_values": wind_input.input_values[0]})
+        # wind_features: dict with each 32000 input vlaues
+         #wind_input[input_values] shape=1,32000 
+        
         # reformat list to dict and set to pytorch format
         batch = self.feature_extractor.pad(
             wind_features,
@@ -425,9 +428,9 @@ class DataCollatorForWav2Vec2Pretraining:
             pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors="pt",
         )
-
+# batch input_values shape = 10, 32000
         device = batch["input_values"].device
-        batch_size = batch["input_values"].shape[0]
+        batch_size = batch["input_values"].shape[0] # 10
 
         mask_indices_seq_length = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
         # make sure masked sequence length is a Python scalar
@@ -460,7 +463,9 @@ class DataCollatorForWav2Vec2Pretraining:
         batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
 
         return batch
-
+# batch["input_values"].shape=[40, 32000] 
+# attention mask auch 40,32000; sub_attention_mask & mask_time_indices=[40,99]
+# len eines windows: 32000 
 
 def multiply_grads(params, c):
     """Multiplies grads by a constant *c*."""
@@ -618,8 +623,8 @@ def main():
         )
 
     # set max & min audio length in number of samples
-    max_length = int(args.max_duration_in_seconds * feature_extractor.sampling_rate)
-    min_length = int(args.min_duration_in_seconds * feature_extractor.sampling_rate)
+    max_length = int(args.max_duration_in_seconds * feature_extractor.sampling_rate) #320000
+    min_length = int(args.min_duration_in_seconds * feature_extractor.sampling_rate) #32000
 
     def prepare_dataset(batch):
         sample = batch[args.audio_column_name]
@@ -627,7 +632,7 @@ def main():
         inputs = feature_extractor(
             sample["array"], sampling_rate=sample["sampling_rate"], max_length=max_length, truncation=True
         )
-        input_values = inputs.input_values[0]
+        input_values = inputs.input_values[0] #[320000, ]
 
         batch["input_values"] = input_values
         batch["input_length"] = len(input_values)
@@ -709,7 +714,7 @@ def main():
     )
     train_dataloader = DataLoader(
         vectorized_datasets["train"],
-        shuffle=True,  # TODO: check 
+        shuffle=False,
         collate_fn=data_collator,
         batch_size=args.per_device_train_batch_size,
         pin_memory=True
@@ -765,7 +770,7 @@ def main():
     completed_steps = 0
     starting_epoch = 0
     for epoch in range(starting_epoch, args.num_train_epochs):
-        model.train()
+        model.train() # here batch["input_values"].shape=40, 32000
 
         for step, batch in enumerate(train_dataloader):  # TODO: Check shape of batch
             # compute num of losses
