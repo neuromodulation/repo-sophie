@@ -68,6 +68,10 @@
 
 """Pre-Training a 🤗 Wav2Vec2 model on unlabeled audio data"""
 
+
+# if charmap error: copy $env:PYTHONUTF8="1" in terminal
+
+
 import argparse
 import math
 import os
@@ -464,7 +468,7 @@ class DataCollatorForWav2Vec2Pretraining:
 
         return batch
 # batch["input_values"].shape=[40, 32000] 
-# attention mask auch 40,32000; sub_attention_mask & mask_time_indices=[40,99]
+# attention mask auch 40,32000; sub_attention_mask & mask_time_indices=[40,99] (4 wegen per device training batch param)
 # len eines windows: 32000 
 
 def multiply_grads(params, c):
