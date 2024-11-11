@@ -468,7 +468,7 @@ class DataCollatorForWav2Vec2Pretraining:
 
         return batch
 # batch["input_values"].shape=[40, 32000] 
-# attention mask auch 40,32000; sub_attention_mask & mask_time_indices=[40,99] (4 wegen per device training batch param)
+# attention mask auch 40,32000; sub_attention_mask & mask_time_indices=[40,99] (4 wegen per device training batch param, 10 wegen sr & stop/step rechnung von windows)
 # len eines windows: 32000 
 
 def multiply_grads(params, c):
@@ -578,7 +578,7 @@ def main():
     # raw_datasets["train"] = raw_datasets["train"].select(range(num_validation_samples, raw_datasets["train"].num_rows))
 ###################################################################################################################################################
 
-    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(args.model_name_or_path)
+    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(args.model_name_or_path) #1
     train_dataset = BIDSBrainVisionDataset(
     directory="data",
     output_dir="output_flac",
