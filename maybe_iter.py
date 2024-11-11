@@ -1,12 +1,13 @@
 # if charmap error: copy $env:PYTHONUTF8="1" in terminal
 
-
 import argparse
 import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
+import mne
+import random
 
 import datasets
 import torch
@@ -34,10 +35,9 @@ from transformers.utils import send_example_telemetry
 
 from torch.utils.tensorboard import SummaryWriter, writer
 from torch.utils.data import DataLoader, TensorDataset
-from loadmp3 import BIDSBrainVisionDataset
-
-from typing import List, Dict, Union
-import numpy as np
+from datasets import IterableDataset
+from tqdm import tqdm
+# from loadmp3 import BIDSBrainVisionDataset
 
 #product quantization in code
 
@@ -166,7 +166,7 @@ def parse_args():
         help="Initial learning rate (after the potential warmup period) to use.",
     )
     parser.add_argument("--weight_decay", type=float, default=0.01, help="Weight decay to use.")
-    parser.add_argument("--num_train_epochs", type=int, default=3, help="Total number of training epochs to perform.")
+    parser.add_argument("--num_train_epochs", type=int, default=1000, help="Total number of training epochs to perform.")
     parser.add_argument(
         "--max_train_steps",
         type=int,
@@ -285,17 +285,68 @@ def parse_args():
 
     return args
 
-def sliding_windows(data, window_size, sfreq):
-    """Create sliding windows from data based on window size and sampling frequency."""
-    step = int(window_size * sfreq)
-    data_length = len(data)
-    windows = [data[x:x + step] for x in range(0, data_length - step + 1, step)]
-    return windows  # List of windowed segments
+##################
+class BIDSBrainVisionDataset(IterableDataset):
+    def __init__(self, filepaths, feature_extractor, target_sr=16000, window_size=2.0):
+        self.filepaths=filepaths
+        self.feature_extractor = feature_extractor
+        self.target_sr = target_sr
+        self.window_size = window_size
+        self._length = self._compute_length()
+        self.current_epoch = 0
+
+    def set_epoch(self, epoch):
+        self.current_epoch = epoch
+                   
+    def sliding_windows(self, data, sfreq):
+        step = int(self.window_size * sfreq)
+        data_length = len(data)
+        windows = [data[x:x + step] for x in range(0, data_length - step + 1, step)]
+        return windows
+
+    def _compute_length(self):
+        all_winds = 0
+        for filepath in self.filepaths:
+            ecog_channels, sfreq, _ = self._load_brainvision_file(filepath)
+            for channel_data in ecog_channels.values():
+                num_winds = len(self.sliding_windows(channel_data, sfreq))
+                all_winds += num_winds
+        return all_winds
     
+    def __iter__(self):
+        for filepath in self.filepaths:
+            ecog_channels, sfreq, available_channels = self._load_brainvision_file(filepath)
+            for channel_name, channel_data in ecog_channels.items():
+                windows = self.sliding_windows(channel_data, sfreq)
+                for window in windows:
+                    inputs = self.feature_extractor(window, 
+                                                    sampling_rate=sfreq, 
+                                                    return_tensors="pt")
+                    yield {
+                        "input_values": inputs.input_values[0],
+                        "sampling_rate": sfreq
+                    }
+                    
+    def _load_brainvision_file(self, filepath):
+        raw = mne.io.read_raw_brainvision(filepath, preload=True)
+        available_channels = raw.ch_names
+        ecogs = {}
+        for channel in available_channels:
+            if "ECOG" not in channel and "LFP" not in channel:
+                continue
+            data, _ = raw[channel, :]
+            data = torch.tensor(data, dtype=torch.float32).squeeze()
+            ecogs[channel] = data 
+        return ecogs, raw.info['sfreq'], list(ecogs.keys())
+    
+    def __len__(self):
+        return self._length
+##########################################################################    
+
 writer = SummaryWriter(log_dir="logging_events_real_data")
 
 @dataclass
-class DataCollatorForWav2Vec2Pretraining:
+class DataCollatorForWav2Vec2Pretraining:   
     model: Wav2Vec2ForPreTraining
     feature_extractor: Wav2Vec2FeatureExtractor
     padding: Union[bool, str] = "longest"
@@ -304,130 +355,210 @@ class DataCollatorForWav2Vec2Pretraining:
     mask_time_length: Optional[int] = 5
     window_size_secs: float = 2.0 ########## bei windwos: 2 mal 16000=32000/input_values(320000) = 10 windows per batch
 
-def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
-        """Create a batch of sliding windows with padding, masking, and negative sampling."""
-        
-        # Prepare sliding window features
+    def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         wind_features = []
         for feature in features:
-            input_values = feature["input_values"]
-            windows = sliding_windows(input_values, self.window_size_secs, self.feature_extractor.sampling_rate)
-            
-            for window in windows:
-                wind_input = self.feature_extractor(
-                    window, sampling_rate=self.feature_extractor.sampling_rate, return_tensors="pt"
-                )
-                wind_features.append({"input_values": wind_input.input_values[0]})
-        
-        # Pad the batch
+            wind_input = self.feature_extractor(
+                feature["input_values"], 
+                sampling_rate=feature["sampling_rate"], 
+                return_tensors="pt"
+            )
+            wind_features.append({"input_values": wind_input.input_values[0]})
+
         batch = self.feature_extractor.pad(
             wind_features,
             padding=self.padding,
-            pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors="pt",
         )
-        
-        # Compute masking and negative sampling
+
+# batch input_values shape = 10, 32000
         device = batch["input_values"].device
-        batch_size = batch["input_values"].shape[0]
+        batch_size = batch["input_values"].shape[0] # 10
 
         mask_indices_seq_length = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
+        # make sure masked sequence length is a Python scalar
         mask_indices_seq_length = int(mask_indices_seq_length)
 
-        # Masked time step preparation
+        # make sure that no loss is computed on padded inputs
         if batch.get("attention_mask") is not None:
+            # compute real output lengths according to convolution formula
             batch["sub_attention_mask"] = self.model._get_feature_vector_attention_mask(
                 mask_indices_seq_length, batch["attention_mask"]
             )
 
         features_shape = (batch_size, mask_indices_seq_length)
 
-        # Sample mask time indices
-        mask_time_indices = self._compute_mask_indices(
+        # sample randomly masked indices
+        mask_time_indices = _compute_mask_indices(
             features_shape,
             self.mask_time_prob,
             self.mask_time_length,
             attention_mask=batch.get("sub_attention_mask"),
         )
 
-        # Sample negative indices
-        sampled_negative_indices = self._sample_negative_indices(
+        # sample negative indices
+        sampled_negative_indices = _sample_negative_indices(
             features_shape,
             self.model.config.num_negatives,
             mask_time_indices=mask_time_indices,
         )
-
-        # Convert mask indices to torch tensors and add to batch
         batch["mask_time_indices"] = torch.tensor(mask_time_indices, dtype=torch.long, device=device)
         batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
 
         return batch
+# batch["input_values"].shape=[40, 32000] 
+# attention mask auch 40,32000; sub_attention_mask & mask_time_indices=[40,99] (4 wegen per device training batch param, 10 wegen sr & stop/step rechnung von windows)
+# len eines windows: 32000 
 
-    def _compute_mask_indices(self, features_shape, mask_time_prob, mask_time_length, attention_mask=None):
-        """Compute random mask indices for masked time steps."""
-        batch_size, sequence_length = features_shape
-        mask = np.zeros((batch_size, sequence_length), dtype=bool)
-        
-        for i in range(batch_size):
-            if attention_mask is not None:
-                seq_len = attention_mask[i].sum()  # Only consider non-padded length
-            else:
-                seq_len = sequence_length
-            
-            num_masked_spans = int(mask_time_prob * seq_len / mask_time_length)
-            
-            for _ in range(num_masked_spans):
-                start_idx = np.random.randint(0, seq_len - mask_time_length)
-                mask[i, start_idx:start_idx + mask_time_length] = True
-        
-        return mask
+def multiply_grads(params, c):
+    """Multiplies grads by a constant *c*."""
+    for p in params:
+        if p.grad is not None:
+            if torch.is_tensor(c):
+                c = c.to(p.grad.device)
+            p.grad.data.mul_(c)
 
-    def _sample_negative_indices(self, features_shape, num_negatives, mask_time_indices=None):
-        """Sample negative indices for contrastive learning."""
-        batch_size, sequence_length = features_shape
-        negatives = np.zeros((batch_size, sequence_length, num_negatives), dtype=int)
-        
-        for i in range(batch_size):
-            for j in range(sequence_length):
-                if mask_time_indices is None or mask_time_indices[i, j]:
-                    neg_indices = np.random.choice(sequence_length - 1, num_negatives, replace=False)
-                    negatives[i, j] = [idx if idx < j else idx + 1 for idx in neg_indices]
-        
-        return negatives
 
-# In main function:
+def get_grad_norm(params, scale=1):
+    """Compute grad norm given a gradient scale."""
+    total_norm = 0.0
+    for p in params:
+        if p.grad is not None:
+            param_norm = (p.grad.detach().data / scale).norm(2)
+            total_norm += param_norm.item() ** 2
+    total_norm = total_norm**0.5
+    return total_norm
+
+
 def main():
     args = parse_args()
+ 
+    send_example_telemetry("run_wav2vec2_pretraining_no_trainer", args)
 
-    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(args.model_name_or_path)
-    config = Wav2Vec2Config.from_pretrained(args.model_name_or_path)
+    # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     accelerator = Accelerator()
     logger.info(accelerator.state, main_process_only=False)
     if accelerator.is_local_main_process:
         datasets.utils.logging.set_verbosity_warning()
         transformers.utils.logging.set_verbosity_info()
 
-    optimizer = AdamW(
-        list(model.parameters()),
-        lr=args.learning_rate,
-        betas=[args.adam_beta1, args.adam_beta2],
-        eps=args.adam_epsilon,
-    )
+        # set up weights and biases if available
+        if is_wandb_available():
+            import wandb
 
+            wandb.init(project=args.output_dir.split("/")[-1])
+    else:
+        datasets.utils.logging.set_verbosity_error()
+        transformers.utils.logging.set_verbosity_error()
+
+    # If passed along, set the training seed now.
+    if args.seed is not None:
+        set_seed(args.seed)
+
+    # Handle the repository creation
+    if accelerator.is_main_process:
+        if args.push_to_hub and not args.preprocessing_only:
+            # Retrieve of infer repo_name
+            repo_name = args.hub_model_id
+            if repo_name is None:
+                repo_name = Path(args.output_dir).absolute().name
+            # Create repo and retrieve repo_id
+            api = HfApi()
+            repo_id = api.create_repo(repo_name, exist_ok=True, token=args.hub_token).repo_id
+
+            with open(os.path.join(args.output_dir, ".gitignore"), "w+") as gitignore:
+                if "step_*" not in gitignore:
+                    gitignore.write("step_*\n")
+                if "epoch_*" not in gitignore:
+                    gitignore.write("epoch_*\n")
+        elif args.output_dir is not None:
+            os.makedirs(args.output_dir, exist_ok=True)
+    accelerator.wait_for_everyone()
+
+    # 1. Download and create train, validation dataset
+    # We load all dataset configuration and datset split pairs passed in
+    # ``args.dataset_config_names`` and ``args.dataset_split_names``
+    ###################################################################################################################################################
+    filepaths = list(Path("data").glob("*.vhdr"))
+    random.shuffle(filepaths)
+
+    val_split_ratio = args.validation_split_percentage / 100.0
+    num_val_samples = int(val_split_ratio * len(filepaths))
+
+    train_files = filepaths[num_val_samples:]
+    val_files = filepaths[:num_val_samples]
+
+
+    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(args.model_name_or_path) #1
     train_dataset = BIDSBrainVisionDataset(
-    directory="data",
-    output_dir="output_flac",
-    feature_extractor=feature_extractor,
-    target_sr=16000,
-    debugging_mode=True
+        filepaths=train_files,
+        feature_extractor=feature_extractor,
+        target_sr=16000,
+        window_size=2.0
     )
 
-    lr_scheduler = get_scheduler(
-        name=args.lr_scheduler_type,
-        optimizer=optimizer,
-        num_warmup_steps=args.num_warmup_steps,
-        num_training_steps=args.max_train_steps,
+    val_dataset = BIDSBrainVisionDataset(
+        filepaths=val_files,
+        feature_extractor=feature_extractor,
+        target_sr=16000,
+        window_size=2.0
     )
+
+    ################################################################################################
+    # 2. Now we preprocess the datasets including loading the audio, resampling and normalization
+    # Thankfully, `datasets` takes care of automatically loading and resampling the audio,
+    # so that we just need to set the correct target sampling rate and normalize the input
+    # via the `feature_extractor`
+
+    # make sure that dataset decodes audio with correct sampling rate
+    # raw_datasets = raw_datasets.cast_column(
+    #     args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
+    # )
+
+    # only normalized-inputs-training is supported
+    if not feature_extractor.do_normalize:
+        raise ValueError(
+            "Training is only supported for normalized inputs. Make sure ``feature_extractor.do_normalize == True``"
+        )
+
+    # set max & min audio length in number of samples
+    max_length = int(args.max_duration_in_seconds * feature_extractor.sampling_rate) #320000
+    min_length = int(args.min_duration_in_seconds * feature_extractor.sampling_rate) #32000
+
+    # def prepare_dataset(batch):
+    #     sample = batch[args.audio_column_name]
+
+    #     inputs = feature_extractor(
+    #         sample["array"], sampling_rate=sample["sampling_rate"], max_length=max_length, truncation=True
+    #     )
+    #     input_values = inputs.input_values[0] #[320000, ]
+
+    #     batch["input_values"] = input_values
+    #     batch["input_length"] = len(input_values)
+
+    #     return batch
+
+    # load via mapped files via path
+    cache_file_names = None
+    if args.train_cache_file_name is not None:
+        cache_file_names = {"train": args.train_cache_file_name, "validation": args.validation_cache_file_name}
+
+    if args.preprocessing_only:
+        return
+
+    # 3. Load model
+    config = Wav2Vec2Config.from_pretrained(args.model_name_or_path)
+
+    # pretraining is only supported for "newer" stable layer norm architecture
+    # apply_spec_augment has to be True, mask_feature_prob has to be 0.0
+    if not config.do_stable_layer_norm or config.feat_extract_norm != "layer":
+        raise ValueError(
+            "PreTraining is only supported for ``config.do_stable_layer_norm=True`` and"
+            " ``config.feat_extract_norm='layer'"
+        )
+
+    # initialize random model
+    # model = Wav2Vec2ForPreTraining(config).to(device)
 
     try:
         if os.path.isdir(args.output_dir):
@@ -437,29 +568,94 @@ def main():
         else:
             raise ValueError(f"No model found at {args.output_dir}")
         
+    except Exception as e:
+        model = Wav2Vec2ForPreTraining(config).to(device)
+        print(f"{e}. Starting new training from scratch.")
+
+    # Activate gradient checkpointing if needed
+    if args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+
+    # 4. Define data collator, optimizer and scheduler
+
+    mask_time_prob = config.mask_time_prob if args.mask_time_prob is None else args.mask_time_prob
+    mask_time_length = config.mask_time_length if args.mask_time_length is None else args.mask_time_length
+
     data_collator = DataCollatorForWav2Vec2Pretraining(
         model=model,
         feature_extractor=feature_extractor,
-        padding=True,
-        mask_time_prob=0.065,
-        mask_time_length=10,
+        pad_to_multiple_of=args.pad_to_multiple_of,
+        mask_time_prob=mask_time_prob,
+        mask_time_length=mask_time_length,
     )
-
-# Prepare DataLoader with the data collator
     train_dataloader = DataLoader(
-        train_dataset,  # Your dataset object
-        batch_size=args.per_device_train_batch_size,
-        shuffle=True,
+        train_dataset,
+        shuffle=False,
         collate_fn=data_collator,
+        batch_size=args.per_device_train_batch_size,
+        pin_memory=True
+    )
+    eval_dataloader = DataLoader(
+        val_dataset,
+        shuffle=False,
+        collate_fn=data_collator, 
+        batch_size=args.per_device_eval_batch_size,
+        pin_memory=True
     )
 
-    for epoch in range(args.num_train_epochs):
-        model.train()
-        for step, batch in enumerate(train_dataloader):
-            # Forward and backward pass, etc.
-            outputs = model(**batch)
-            loss = outputs.loss / args.gradient_accumulation_steps
-            accelerator.backward(loss)
+    # Optimizer
+    optimizer = AdamW(
+        list(model.parameters()),
+        lr=args.learning_rate,
+        betas=[args.adam_beta1, args.adam_beta2],
+        eps=args.adam_epsilon,
+    )
+
+    # Prepare everything with our `accelerator`.
+    model, optimizer, train_dataloader, eval_dataloader = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader
+    )
+
+    # Scheduler and math around the number of training steps.
+    num_update_steps_per_epoch = math.ceil(len(train_dataset) / args.gradient_accumulation_steps)
+
+    if args.max_train_steps is None:
+        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+
+    lr_scheduler = get_scheduler(
+        name=args.lr_scheduler_type,
+        optimizer=optimizer,
+        num_warmup_steps=args.num_warmup_steps,
+        num_training_steps=args.max_train_steps,
+    )
+
+    # Afterwards we recalculate our number of training epochs
+    args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
+
+    # 5. Train
+    total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
+
+    logger.info("***** Running training *****")
+    logger.info(f"  Num examples = {len(train_dataset)}")
+    logger.info(f"  Num Epochs = {args.num_train_epochs}")
+    logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
+    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
+    logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+    logger.info(f"  Total optimization steps = {args.max_train_steps}")
+    completed_steps = 0
+    starting_epoch = 0
+
+    # Only show the progress bar once on each machine.
+    
+    progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
+    completed_steps = 0
+    starting_epoch = 0
+    model.train()
+    for epoch in range(starting_epoch, args.num_train_epochs):
+        # model.train() # here batch["input_values"].shape=40, 32000
+
+        for step, batch in enumerate(train_dataloader):  # TODO: Check shape of batch
+            # compute num of losses
             num_losses = batch["mask_time_indices"].sum()
             sub_attention_mask = batch.pop("sub_attention_mask", None)
             sub_attention_mask = (
@@ -467,20 +663,54 @@ def main():
             )
             percent_masked = num_losses / sub_attention_mask.sum()
 
-            gumbel_temperature = max(
+            # forward
+            outputs = model(**batch) # .to(device)
+            loss = outputs.loss / args.gradient_accumulation_steps
+            accelerator.backward(loss)
+
+            if accelerator.state.num_processes > 1:
+                num_losses = accelerator.gather_for_metrics(num_losses).sum()
+                gradient_multiplier = accelerator.state.num_processes / num_losses
+                multiply_grads(model.module.parameters(), gradient_multiplier)
+            else:
+                multiply_grads(model.parameters(), 1 / num_losses)
+
+            # update step
+            if (step + 1) % args.gradient_accumulation_steps == 0:
+                # compute grad norm for monitoring
+                scale = (
+                    accelerator.scaler._scale.item()
+                    if hasattr(accelerator, "scaler") and accelerator.scaler is not None
+                    else 1
+                )
+                if accelerator.state.num_processes > 1:
+                    grad_norm = get_grad_norm(model.module.parameters(), scale)
+                else:
+                    grad_norm = get_grad_norm(model.parameters(), scale)
+
+                # update parameters
+                optimizer.step()
+                optimizer.zero_grad()
+
+                if not accelerator.optimizer_step_was_skipped:
+                    lr_scheduler.step()
+                elif accelerator.is_local_main_process:
+                    progress_bar.write(
+                        f"Gradients have overflown - skipping update step... Updating gradient scale to {scale}..."
+                    )
+
+                # update gumbel temperature
+                gumbel_temperature = max(
                     args.max_gumbel_temperature * args.gumbel_temperature_decay**completed_steps,
                     args.min_gumbel_temperature,
                 )
-            if hasattr(model, "module"):
-                model.module.set_gumbel_temperature(gumbel_temperature)
-            else:
-                model.set_gumbel_temperature(gumbel_temperature)
-
-            if (step + 1) % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
-                optimizer.step()
-                optimizer.zero_grad()
-                lr_scheduler.step()
-
+                if hasattr(model, "module"):
+                    model.module.set_gumbel_temperature(gumbel_temperature)
+                else:
+                    model.set_gumbel_temperature(gumbel_temperature)
+                
+                progress_bar.update(1)
+                completed_steps += 1
 
             # 6. Log all results
             if (step + 1) % (args.gradient_accumulation_steps * args.logging_steps) == 0:
@@ -547,7 +777,7 @@ def main():
 
         # 7. Validate!
         model.eval()
-
+        
         # init logs
         val_logs = {
             "val_loss": 0,

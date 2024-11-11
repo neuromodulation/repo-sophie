@@ -868,6 +868,7 @@ def main():
                     "lr": torch.tensor(optimizer.param_groups[0]["lr"]),
                     "temp": torch.tensor(gumbel_temperature),
                     "grad_norm": torch.tensor(grad_norm),
+                    "Outputs": outputs
                 }
                 log_str = ""
                 for k, v in train_logs.items():
