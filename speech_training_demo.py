@@ -886,6 +886,7 @@ def main():
                     writer.add_scalar("learning_rate/train", float(train_logs["lr"].item()), step)
                     writer.add_scalar("grad_norm/train", float(train_logs["grad_norm"].item()), step)
                     writer.add_scalar("test_value", 1.0, 0)
+                    writer.add_scalar("outputs", outputs, step)
                     writer.flush()
 
             # save model every `args.saving_steps` steps
