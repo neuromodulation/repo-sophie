@@ -788,7 +788,9 @@ def main():
                     "lr": torch.tensor(optimizer.param_groups[0]["lr"]),
                     "temp": torch.tensor(gumbel_temperature),
                     "grad_norm": torch.tensor(grad_norm),
-                    "Outputs": outputs
+                    "Outputs": outputs,
+                    "projectec_states": torch.tensor(outputs.projected_states),
+                    "projected_quant_states": torch.tensor(outputs.projected_quantized_states)
                 }
 
                 log_str = ""
@@ -851,7 +853,7 @@ def main():
             val_logs["val_contrastive_loss"] += outputs.contrastive_loss
             val_logs["val_diversity_loss"] += outputs.diversity_loss
             val_logs["val_num_losses"] += batch["mask_time_indices"].sum()
-            val_logs["val_outputs"] += outputs
+            # val_logs["val_outputs"] += outputs
 
         # sum over devices in multi-processing
         if accelerator.num_processes > 1:
