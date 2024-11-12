@@ -1,76 +1,7 @@
-# import numpy as np
-
-# obj = ([[[ 0.4201,  0.4507,  0.4947,  ...,  0.1017,  0.0806,  0.1255],
-#          [ 0.5390,  0.5352,  0.5218,  ..., -0.6319, -0.6472, -0.6826],
-#          [-0.0212, -0.0021, -0.0097,  ..., -0.5552, -0.5476, -0.5084],
-#          [ 0.1328,  0.1003,  0.0640,  ...,  0.2595,  0.2671,  0.2661],
-#          [-0.7835, -0.8159, -0.8408,  ...,  0.8454,  0.8358,  0.7833],
-#          [-0.2873, -0.2682, -0.2300,  ..., -0.0193,  0.0113,  0.0160]]]), ([[[71.1553, 39.3097, 69.8358,  ..., -0.6130,  0.0000,  0.0000]]])
-
-# # print(type(obj))
-
-# np.array(obj)
-
-# error reproduced
-#in generic.py, line 299, this operation fails, cuz obj is a tuple of 2 tensors without the same shape. maybe i have to modify the whole structure :(
-# from datasets import load_dataset_builder, load_dataset
-# import librosa
-# from transformers import Wav2Vec2Processor
-# import soundfile as sf
-# from sklearn.model_selection import train_test_split
-
-# #processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h")
-# load_dataset_builder("mozilla-foundation/common_voice_11_0")
-
-# def preprocess_function(batch):
-#     speech_array, sampling_rate = sf.read(batch["path"])
-
-#     if sampling_rate != 16000:
-#         speech_array = librosa.resample(speech_array, orig_sr=sampling_rate, target_sr=16000)
-
-#     inputs = processor(speech_array, sampling_rate=16000, return_tensors="pt", padding=True, trust_remote_code=True)
-
-#     with processor.as_target_processor():
-#         labels = processor(batch["sentence"], return_tensors="pt").input_ids
-
-#     inputs["labels"] = labels
-#     return inputs
-
-# load_dataset_builder("mozilla-foundation/common_voice_11_0", trust_remote_code=True)
-# dataset = load_dataset("mozilla-foundation/common_voice_11_0", "en", split="train", trust_remote_code=True) 
-# df = dataset.to_pandas()
-# train_dataset, eval_dataset = train_test_split(df, test_size=0.2, random_state=42)
-# train_ds = dataset.from_pandas(train_dataset)
-# eval_ds = dataset.from_pandas(eval_dataset)
-
-# #processed_dataset = dataset.map(preprocess_function)
-# train_data = train_ds.map(preprocess_function)
-# eval_data = eval_ds.map(preprocess_function)
-# from datasets import load_dataset
-
-# dataset = load_dataset("C:/Users/ICN/Downloads/LJSpeech-1.1.tar.bz2", split="train[:10%]")
-# print(dataset)
-
-#!/usr/bin/env python
-# coding=utf-8
-# Copyright 2021 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-
 """Pre-Training a 🤗 Wav2Vec2 model on unlabeled audio data"""
 
 
 # if charmap error: copy $env:PYTHONUTF8="1" in terminal
-
 
 import argparse
 import math
@@ -78,12 +9,14 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
+import glob
+
 
 import datasets
 import torch
 from accelerate import Accelerator
 from accelerate.logging import get_logger
-from datasets import DatasetDict, concatenate_datasets, load_dataset
+from datasets import DatasetDict, concatenate_datasets, load_dataset, IterableDataset
 from huggingface_hub import HfApi
 from torch.utils.data.dataloader import DataLoader
 from tqdm.auto import tqdm
@@ -353,16 +286,7 @@ def parse_args():
 
     return args
 
-def sliding_windows(data, window_size, sfreq):
-    step = int(window_size * sfreq)
-    data_length = len(data)
-    windows = []
-
-    for x in range(0, data_length - step + 1, step):
-        stop = x + step
-        windows.append(data[x:stop])
-    return windows #list
-    
+  
 writer = SummaryWriter(log_dir="logging_events_real_data")
 @dataclass
 class DataCollatorForWav2Vec2Pretraining:
@@ -374,64 +298,64 @@ class DataCollatorForWav2Vec2Pretraining:
     mask_time_length: Optional[int] = 5
     window_size_secs: float = 2.0 ########## bei windwos: 2 mal 16000=32000/input_values(320000) = 10 windows per batch
 
-    def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
-        wind_features = []
-        for feature in features:
-            input_values = feature["input_values"]
+#    def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
+#         wind_features = []
+#         for feature in features:
+#             input_values = feature["input_values"]
 
-            windows = sliding_windows( #windowslen = 10, window len alwys 32000
-                input_values, # len=320000
-                self.window_size_secs,
-                self.feature_extractor.sampling_rate)
+#             windows = sliding_windows( #windowslen = 10, window len alwys 32000
+#                 input_values, # len=320000
+#                 self.window_size_secs,
+#                 self.feature_extractor.sampling_rate)
             
-            for window in windows:
-                wind_input = self.feature_extractor(window, sampling_rate=self.feature_extractor.sampling_rate, return_tensors="pt")
-                wind_features.append({"input_values": wind_input.input_values[0]})
-        # wind_features: dict with each 32000 input vlaues
-         #wind_input[input_values] shape=1,32000 
+#             for window in windows:
+#                 wind_input = self.feature_extractor(window, sampling_rate=self.feature_extractor.sampling_rate, return_tensors="pt")
+#                 wind_features.append({"input_values": wind_input.input_values[0]})
+#         # wind_features: dict with each 32000 input vlaues
+#          #wind_input[input_values] shape=1,32000 
         
-        # reformat list to dict and set to pytorch format
-        batch = self.feature_extractor.pad(
-            wind_features,
-            padding=self.padding,
-            pad_to_multiple_of=self.pad_to_multiple_of,
-            return_tensors="pt",
-        )
-# batch input_values shape = 10, 32000
-        device = batch["input_values"].device
-        batch_size = batch["input_values"].shape[0] # 10
+#         # reformat list to dict and set to pytorch format
+#         batch = self.feature_extractor.pad(
+#             wind_features,
+#             padding=self.padding,
+#             pad_to_multiple_of=self.pad_to_multiple_of,
+#             return_tensors="pt",
+#         )
+# # batch input_values shape = 10, 32000
+#         device = batch["input_values"].device
+#         batch_size = batch["input_values"].shape[0] # 10
 
-        mask_indices_seq_length = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
-        # make sure masked sequence length is a Python scalar
-        mask_indices_seq_length = int(mask_indices_seq_length)
+#         mask_indices_seq_length = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
+#         # make sure masked sequence length is a Python scalar
+#         mask_indices_seq_length = int(mask_indices_seq_length)
 
-        # make sure that no loss is computed on padded inputs
-        if batch.get("attention_mask") is not None:
-            # compute real output lengths according to convolution formula
-            batch["sub_attention_mask"] = self.model._get_feature_vector_attention_mask(
-                mask_indices_seq_length, batch["attention_mask"]
-            )
+#         # make sure that no loss is computed on padded inputs
+#         if batch.get("attention_mask") is not None:
+#             # compute real output lengths according to convolution formula
+#             batch["sub_attention_mask"] = self.model._get_feature_vector_attention_mask(
+#                 mask_indices_seq_length, batch["attention_mask"]
+#             )
 
-        features_shape = (batch_size, mask_indices_seq_length)
+#         features_shape = (batch_size, mask_indices_seq_length)
 
-        # sample randomly masked indices
-        mask_time_indices = _compute_mask_indices(
-            features_shape,
-            self.mask_time_prob,
-            self.mask_time_length,
-            attention_mask=batch.get("sub_attention_mask"),
-        )
+#         # sample randomly masked indices
+#         mask_time_indices = _compute_mask_indices(
+#             features_shape,
+#             self.mask_time_prob,
+#             self.mask_time_length,
+#             attention_mask=batch.get("sub_attention_mask"),
+#         )
 
-        # sample negative indices
-        sampled_negative_indices = _sample_negative_indices(
-            features_shape,
-            self.model.config.num_negatives,
-            mask_time_indices=mask_time_indices,
-        )
-        batch["mask_time_indices"] = torch.tensor(mask_time_indices, dtype=torch.long, device=device)
-        batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
+#         # sample negative indices
+#         sampled_negative_indices = _sample_negative_indices(
+#             features_shape,
+#             self.model.config.num_negatives,
+#             mask_time_indices=mask_time_indices,
+#         )
+#         batch["mask_time_indices"] = torch.tensor(mask_time_indices, dtype=torch.long, device=device)
+#         batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
 
-        return batch
+#         return batch
 # batch["input_values"].shape=[40, 32000] 
 # attention mask auch 40,32000; sub_attention_mask & mask_time_indices=[40,99] (4 wegen per device training batch param, 10 wegen sr & stop/step rechnung von windows)
 # len eines windows: 32000 
@@ -455,6 +379,20 @@ def get_grad_norm(params, scale=1):
     total_norm = total_norm**0.5
     return total_norm
 
+class PreprocessedDataset(IterableDataset):
+    def __init__(self, preprocessed_dir):
+        # Get all saved files
+        self.filepaths = glob.glob(os.path.join(preprocessed_dir, "*.pt"))
+    
+    def __iter__(self):
+        for filepath in self.filepaths:
+            # Load each preprocessed file one at a time
+            inputs = torch.load(filepath)
+            yield {"input_values": inputs}
+    
+    def __len__(self):
+        # Optional: define length if it’s required
+        return len(self.filepaths)
 
 def main():
     # See all possible arguments in src/transformers/args.py
@@ -519,87 +457,14 @@ def main():
     debugging_mode=True
 )
 
-    datasets_splits = []
-    datasets_splits.append(train_dataset.hf_dataset)
-     
-    raw_datasets = DatasetDict()
-    if len(datasets_splits) > 1:
-        raw_datasets["train"] = concatenate_datasets(datasets_splits).shuffle(seed=args.seed)
-    else:
-        raw_datasets["train"] = datasets_splits[0] 
-
-    num_validation_samples = max(1, raw_datasets["train"].num_rows * args.validation_split_percentage // 100)
-
-    if num_validation_samples == 0:
-        raise ValueError(
-            "`args.validation_split_percentage` is less than a single sample "
-            f"for {len(raw_datasets['train'])} training samples. Increase "
-            "`args.num_validation_split_percentage`."
-        )
-
-    raw_datasets["validation"] = raw_datasets["train"].select(range(num_validation_samples))
-    raw_datasets["train"] = raw_datasets["train"].select(range(num_validation_samples, raw_datasets["train"].num_rows))
-#################################################################################################################################################
-
+    if args.preprocessing_only:
+        return
+    
     # 2. Now we preprocess the datasets including loading the audio, resampling and normalization
     # Thankfully, `datasets` takes care of automatically loading and resampling the audio,
     # so that we just need to set the correct target sampling rate and normalize the input
     # via the `feature_extractor`
-
-
-    # make sure that dataset decodes audio with correct sampling rate
-    raw_datasets = raw_datasets.cast_column(
-        args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
-    )
-
-    # only normalized-inputs-training is supported
-    if not feature_extractor.do_normalize:
-        raise ValueError(
-            "Training is only supported for normalized inputs. Make sure ``feature_extractor.do_normalize == True``"
-        )
-
-    # set max & min audio length in number of samples
-    max_length = int(args.max_duration_in_seconds * feature_extractor.sampling_rate) #320000
-    min_length = int(args.min_duration_in_seconds * feature_extractor.sampling_rate) #32000
-
-    def prepare_dataset(batch):
-        sample = batch[args.audio_column_name]
-
-        inputs = feature_extractor(
-            sample["array"], sampling_rate=sample["sampling_rate"], max_length=max_length, truncation=True
-        )
-        input_values = inputs.input_values[0] #[320000, ]
-
-        batch["input_values"] = input_values
-        batch["input_length"] = len(input_values)
-
-        return batch
-
-    # load via mapped files via path
-    cache_file_names = None
-    if args.train_cache_file_name is not None:
-        cache_file_names = {"train": args.train_cache_file_name, "validation": args.validation_cache_file_name}
-
-    # load audio files into numpy arrays
-    with accelerator.main_process_first():
-        vectorized_datasets = raw_datasets.map(
-            prepare_dataset,
-            num_proc=args.preprocessing_num_workers,
-            remove_columns=raw_datasets["train"].column_names,
-            cache_file_names=cache_file_names,
-        )
-
-        vectorized_datasets = vectorized_datasets.remove_columns("input_length")
-        # vectorized_datasets = next(iter(DataLoader))
-
-    # for large datasets it is advised to run the preprocessing on a ######################################################################
-    # single machine first with ``args.preprocessing_only`` since there will mostly likely
-    # be a timeout when running the script in distributed mode.
-    # In a second step ``args.preprocessing_only`` can then be set to `False` to load the
-    # cached dataset
-    if args.preprocessing_only:
-        return
-
+    
     # 3. Load model
     config = Wav2Vec2Config.from_pretrained(args.model_name_or_path)
 

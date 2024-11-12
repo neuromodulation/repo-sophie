@@ -524,21 +524,7 @@ def main():
     # set max & min audio length in number of samples
     max_length = int(args.max_duration_in_seconds * feature_extractor.sampling_rate) #320000
     min_length = int(args.min_duration_in_seconds * feature_extractor.sampling_rate) #32000
-
-    # def prepare_dataset(batch):
-    #     sample = batch[args.audio_column_name]
-
-    #     inputs = feature_extractor(
-    #         sample["array"], sampling_rate=sample["sampling_rate"], max_length=max_length, truncation=True
-    #     )
-    #     input_values = inputs.input_values[0] #[320000, ]
-
-    #     batch["input_values"] = input_values
-    #     batch["input_length"] = len(input_values)
-
-    #     return batch
-
-    # load via mapped files via path
+   
     cache_file_names = None
     if args.train_cache_file_name is not None:
         cache_file_names = {"train": args.train_cache_file_name, "validation": args.validation_cache_file_name}
@@ -556,9 +542,6 @@ def main():
             "PreTraining is only supported for ``config.do_stable_layer_norm=True`` and"
             " ``config.feat_extract_norm='layer'"
         )
-
-    # initialize random model
-    # model = Wav2Vec2ForPreTraining(config).to(device)
 
     try:
         if os.path.isdir(args.output_dir):
