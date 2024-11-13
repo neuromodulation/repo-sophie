@@ -10,7 +10,7 @@ import soundfile as sf
 from transformers import Wav2Vec2FeatureExtractor
 from datasets import Dataset as HFDataset, Audio
 import numpy as np
-from datasets import DatasetDict
+from datasets import DatasetDict, concatenate_datasets
 
 feature_extractor = Wav2Vec2FeatureExtractor
 
@@ -33,28 +33,13 @@ class BIDSBrainVisionDataset(Dataset):
             raise ValueError(f"No .vhdr files found in the directory: {directory}")
         
         if self.debugging_mode:
-            self.filepaths = self.filepaths[:2]
-            print("debugging mdoe is ON, loading only firat two files")
+            self.filepaths = self.filepaths[:1]
+            print("debugging mdoe is ON, loading only firat file")
         else:
             print("debugging mode OFF")
         
         self._load_all_files()
         self.hf_dataset = self._create_hf_dataset()
-
-    def load_brainvision_file(self, filepath):
-        print(f"filepath:  {filepath}")
-        raw = mne.io.read_raw_brainvision(filepath, preload=self.preload)
-        
-        available_channels = raw.ch_names
-        ecogs = {}
-
-        for channel in available_channels:
-            if "ECOG" not in channel and "LFP" not in channel: #didnt find, where the channeltypes get read with raw, so i just filter by name
-                continue
-            data, _ = raw[channel, :]
-            ecogs[channel] = torch.tensor(data, dtype=torch.float32)
-
-        return ecogs, raw.info['sfreq'], list(ecogs.keys())
 
     def _load_all_files(self):
         for filepath in self.filepaths:
@@ -73,7 +58,7 @@ class BIDSBrainVisionDataset(Dataset):
         
         channel_data = channel_data.numpy().astype(np.float32).squeeze()
         channel_data_resampled = librosa.resample(channel_data, orig_sr=sfreq, target_sr=self.target_sr)
-        channel_data_resampled = librosa.util.normalize(channel_data_resampled)
+        # channel_data_resampled = librosa.util.normalize(channel_data_resampled)
         sf.write(flac_filename, channel_data_resampled, self.target_sr, format='FLAC')
 
         print(f"Saved FLAC for {channel_name} as {flac_filename}")
@@ -84,12 +69,12 @@ class BIDSBrainVisionDataset(Dataset):
         transcriptions = [None] * len(self.data)
 
         data_dict = {
-            "audio": audio_files,
-            "transcription": transcriptions
+            "raw_data": audio_files,
+            # "transcription": transcriptions
         }
 
         hf_dataset = HFDataset.from_dict(data_dict)
-        hf_dataset = hf_dataset.cast_column("audio", Audio(sampling_rate=self.target_sr))
+        hf_dataset = hf_dataset.cast_column("raw_data", Audio(sampling_rate=self.target_sr))
 
         return hf_dataset
 
@@ -104,12 +89,8 @@ class BIDSBrainVisionDataset(Dataset):
     datasets_splits.append(train_dataset.hf_dataset)
      
     raw_datasets = DatasetDict()
-    if len(datasets_splits) > 1:
-        raw_datasets["train"] = concatenate_datasets(datasets_splits).shuffle(seed=args.seed)
-    else:
-        raw_datasets["train"] = datasets_splits[0] 
-
-    num_validation_samples = max(1, raw_datasets["train"].num_rows * args.validation_split_percentage // 100)
+    
+    num_validation_samples = max(1, raw_datasets["train"].num_rows * 10 // 100)
 
     if num_validation_samples == 0:
         raise ValueError(
@@ -121,18 +102,24 @@ class BIDSBrainVisionDataset(Dataset):
     raw_datasets["validation"] = raw_datasets["train"].select(range(num_validation_samples))
     raw_datasets["train"] = raw_datasets["train"].select(range(num_validation_samples, raw_datasets["train"].num_rows))
 ########
-def sliding_windows(data, window_size, sfreq):
-    step = int(window_size * sfreq)
-    data_length = len(data)
-    windows = []
 
-    for x in range(0, data_length - step + 1, step):
-        stop = x + step
-        windows.append(data[x:stop])
-    return windows #list
+def load_brainvision_file(self, filepath):
+    print(f"filepath:  {filepath}")
+    raw = mne.io.read_raw_brainvision(filepath, preload=self.preload)
+        
+    available_channels = raw.ch_names
+    ecogs = {}
+
+    for channel in available_channels:
+        if "ECOG" not in channel and "LFP" not in channel: #didnt find, where the channeltypes get read with raw, so i just filter by name
+            continue
+        data, _ = raw[channel, :]
+        ecogs[channel] = torch.tensor(data, dtype=torch.float32)
+
+    return ecogs, raw.info['sfreq'], list(ecogs.keys())
 
 def prepare_dataset(batch):
-    sample = batch["audio"]
+    sample = batch["raw_data"]
     max_length = int(feature_extractor.sampling_rate * 20.0)
     inputs = feature_extractor(
         sample["array"], 
@@ -160,3 +147,7 @@ for idx, filepath in enumerate(filepaths):
 
             save_path = os.path.join(preprocessed_dir, f"sample_{idx}_{channel_name}_{window_idx}.pt")
             torch.save(inputs, save_path)
+
+# vectorized_datasets: datasetDict, column_names: {"train": ["input_values", "input_length"], "validation": ["input_values", "input_length"]}
+# shape=x, 2
+# vectorized_datasets = vectorized_datasets.remove_columns("input_length")
