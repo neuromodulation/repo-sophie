@@ -30,6 +30,7 @@ events.out.tfevents.1731424514.DESKTOP-RPLNF8J.17344.0
 ts_data/
 timeseries_transformer/Monash_UEA_UCR_Regression_Archive.zip
 timeseries_transformer/mvts_transformer/.idea/
+timeseries_transformer/mvts_transformer/test.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
