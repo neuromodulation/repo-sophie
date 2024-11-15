@@ -26,6 +26,10 @@ rest_output_flac/
 wav2vec2-rest-demo/
 model_001data_25-20-24.safetensors
 wandb/
+events.out.tfevents.1731424514.DESKTOP-RPLNF8J.17344.0
+ts_data/
+timeseries_transformer/Monash_UEA_UCR_Regression_Archive.zip
+timeseries_transformer/mvts_transformer/.idea/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

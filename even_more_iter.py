@@ -464,7 +464,15 @@ def main():
     # Thankfully, `datasets` takes care of automatically loading and resampling the audio,
     # so that we just need to set the correct target sampling rate and normalize the input
     # via the `feature_extractor`
-    
+    with accelerator.main_process_first():
+        vectorized_datasets = raw_datasets.map(
+            prepare_dataset,
+            num_proc=args.preprocessing_num_workers,
+            remove_columns=raw_datasets["train"].column_names,
+            cache_file_names=cache_file_names,
+        )
+
+        vectorized_datasets = vectorized_datasets.remove_columns("input_length")    
     # 3. Load model
     config = Wav2Vec2Config.from_pretrained(args.model_name_or_path)
 
