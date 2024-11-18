@@ -1,86 +1,99 @@
 import os
 import glob
-import mne
+import torch
 import pandas as pd
+import mne
 import numpy as np
-from aeon.datasets import write_to_tsfile
+import re
+from datasets.data import BaseData
 
-def subsample(series, factor=1):
-    """Subsample the time-series data by a specified factor."""
-    if factor > 1:
-        return series[::factor]
-    return series
-
-
-def interpolate_missing(series):
-    """Interpolate missing values in the time-series."""
-    return series.interpolate(method='linear').fillna(method='bfill').fillna(method='ffill')
-
-
-def convert_to_ts(filepath, output_tsfile):
+class TSRegressionArchive(BaseData):
     """
-    Converts a single BIDS `.vhdr` file to `.ts` format.
+    Dataset class for datasets included in:
+    1) the Time Series Regression Archive (www.timeseriesregression.org), or
+    2) the Time Series Classification Archive (www.timeseriesclassification.com)
     
-    Args:
-        filepath (str): Path to the BIDS `.vhdr` file.
-        output_tsfile (str): Output path for the `.ts` file.
+    Updates:
+        - Supports `.vhdr` files in BIDS format.
+        - Separates channels into individual rows/columns.
+        - Each file becomes its own DataFrame.
     """
-    raw = mne.io.read_raw_brainvision(filepath, preload=True)
-    data, times = raw.get_data(return_times=True)
+    def __init__(self, root_dir, file_list=None, pattern=None, limit_size=None, config=None, preload=True):
+        """
+        Args:
+            root_dir: Directory containing `.vhdr` files.
+            file_list: List of specific files to load. Defaults to all files in `root_dir`.
+            pattern: Regex pattern to filter files. Defaults to None.
+            limit_size: Limit the number of samples. Can be an integer or a proportion (0, 1].
+            config: Configuration dictionary for tasks (regression, classification, etc.).
+            preload: Whether to preload data using MNE.
+        """
+        self.root_dir = root_dir
+        self.file_list = file_list
+        self.pattern = pattern
+        self.limit_size = limit_size
+        self.config = config or {}
+        self.preload = preload
 
-    df = pd.DataFrame(data.T, columns=raw.ch_names, index=pd.Index(times, name='timestamp'))
+        self.all_files_data = self.load_all_files()
+        self.labels_df = None
 
-    lengths = df.applymap(len).values if isinstance(df.iloc[0, 0], pd.Series) else None
-    if lengths is not None:
-        horiz_diffs = np.abs(lengths - np.expand_dims(lengths[:, 0], -1))
-        if np.sum(horiz_diffs) > 0:
-            print(f"Inconsistent lengths in {filepath}. Subsampling first dimension...")
-            df = df.applymap(lambda x: subsample(x, factor=1)) 
+    def load_all_files(self):
+        file_paths = (
+            glob.glob(os.path.join(self.root_dir, "*.vhdr"))
+            if self.file_list is None
+            else [os.path.join(self.root_dir, file) for file in self.file_list]
+        )
+        if self.pattern:
+            file_paths = [f for f in file_paths if re.search(self.pattern, f)]
+        if not file_paths:
+            raise ValueError(f"No `.vhdr` files found in directory: {self.root_dir}")
 
-    subsample_factor = 1
-    df = df.applymap(lambda x: subsample(x, factor=subsample_factor))
+        all_files_data = {}
+        for filepath in file_paths:
+            file_name = os.path.basename(filepath)
+            df = self.load_single_file(filepath)
+            all_files_data[file_name] = df
 
-    df = df.groupby(df.index).transform(interpolate_missing)
+        return all_files_data
 
-    write_to_tsfile(
-        data=df, #needs pd dataframe as input what a shit
-        path=output_tsfile,
-        problem_name=os.path.basename(filepath).split('.')[0],
-        class_labels=None, 
-        fold=None,
-        return_separate_X_and_y=False,
-    )
+    def load_single_file(self, filepath):
+        """
+        Load a single `.vhdr` file and process its channels and timestamps.
+        Args:
+            filepath: Path to the `.vhdr` file.
+        Returns:
+            A DataFrame where each row represents a channel, and columns represent time-series data.
+        """
+        raw = mne.io.read_raw_brainvision(filepath, preload=self.preload)
+        timestamps = raw.times 
 
-    print(f"Converted {filepath} to {output_tsfile}")
+        available_channels = raw.ch_names
+        ecog_data = {}
+        for channel in available_channels:
+            if "ECOG" not in channel and "LFP" not in channel:
+                continue
+            data, _ = raw[channel, :]
+            ecog_data[channel] = data[0]
 
+        df = pd.DataFrame(ecog_data)
+        df.insert(0, "Timestamp", timestamps) 
 
-def batch_convert_bids_to_ts(input_dir, output_dir):
-    """
-    Converts all `.vhdr` files in a directory to `.ts` format.
-    
-    Args:
-        input_dir (str): Directory containing `.vhdr` files.
-        output_dir (str): Directory to save `.ts` files.
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    
-    vhdr_files = glob.glob(os.path.join(input_dir, "*.vhdr"))
-    if not vhdr_files:
-        print("No .vhdr files found in this directory.")
-        return
+        return df
 
-    for vhdr_file in vhdr_files:
-        ts_filename = os.path.splitext(os.path.basename(vhdr_file))[0] + ".ts"
-        output_tsfile = os.path.join(output_dir, ts_filename)
+    def get_all_data(self):
+        """
+        Combine all loaded files into a single DataFrame for further analysis.
+        Returns:
+            A concatenated DataFrame of all files, with a new column indicating the file source.
+        """
+        combined_df = pd.concat(
+            [
+                df.assign(FileName=file_name)
+                for file_name, df in self.all_files_data.items()
+            ],
+            ignore_index=True,
+        )
+        return combined_df
 
-        convert_to_ts(vhdr_file, output_tsfile)
-    
-    print(f"All files converted. Outputs saved in {output_dir}")
-
-
-if __name__ == "__main__":
-    input_directory = "data"
-    output_directory = "ts_data"
-
-    batch_convert_bids_to_ts(input_directory, output_directory)
-
+cooler_data = {"bids": TSRegressionArchive}
