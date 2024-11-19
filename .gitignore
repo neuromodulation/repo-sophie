@@ -31,6 +31,7 @@ ts_data/
 timeseries_transformer/Monash_UEA_UCR_Regression_Archive.zip
 timeseries_transformer/mvts_transformer/.idea/
 timeseries_transformer/mvts_transformer/test.py
+output_Transformer/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
