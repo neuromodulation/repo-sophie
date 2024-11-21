@@ -330,5 +330,3 @@ class ImputationDataset(Dataset):
 
 
 cooler_data = {"bids": ImputationDataset}
-# maybe i gotta change rows and columns
-           
