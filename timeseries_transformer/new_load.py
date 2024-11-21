@@ -9,7 +9,7 @@ from datasets.data import BaseData
 from torch.utils.data import Dataset
 
 
-class TSRegressionArchive:
+class TSRegressionArchive(BaseData):
     """
     Dataset class for datasets included in:
     1) the Time Series Regression Archive (www.timeseriesregression.org), or
@@ -237,7 +237,6 @@ class ImputationDataset(Dataset):
         self.exclude_feats = exclude_feats
         self.preload = preload
 
-        # Load and preprocess data
         self.data = self.load_all_files()
         # self.IDs = list(self.data.keys())  # File IDs
         self.all_IDs = list(self.data.keys()) 
@@ -288,10 +287,11 @@ class ImputationDataset(Dataset):
             ecog_data[channel] = data[0]
 
         df = pd.DataFrame(ecog_data)
-        df.insert(0, "Timestamp", timestamps)
+        df.insert(0, "Timestamp", timestamps)  
 
         file_ID = os.path.basename(filepath).split(".")[0]
-        df["FileID"] = file_ID
+        df.insert(0, "FileID", file_ID) #130001 lang == len(df.ECOG_RIGHT_0 bis 5 & Timestamps)
+        # df["FileID"] = file_ID
 
         return df
 
@@ -305,7 +305,7 @@ class ImputationDataset(Dataset):
             mask: (seq_length, feat_dim) boolean tensor: 0s mask and predict, 1s unaffected input.
             ID: ID of the file or sample.
         """
-        ID = self.IDs[ind]
+        ID = self.all_IDs[ind]
         sample_df = self.feature_df[self.feature_df["FileID"] == ID]
 
         # Drop non-feature columns (e.g., Timestamp, FileID)
@@ -326,8 +326,9 @@ class ImputationDataset(Dataset):
         """
         Returns the total number of unique samples in the dataset.
         """
-        return len(self.IDs)
+        return len(self.all_IDs)
 
 
 cooler_data = {"bids": ImputationDataset}
-               
+# maybe i gotta change rows and columns
+           

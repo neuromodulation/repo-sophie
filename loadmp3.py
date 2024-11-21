@@ -63,7 +63,7 @@ class BIDSBrainVisionDataset(Dataset):
             return flac_filename
         
         channel_data = channel_data.numpy().astype(np.float32).squeeze()
-        channel_data_resampled = librosa.resample(channel_data, orig_sr=sfreq, target_sr=self.target_sr)
+        channel_data_resampled = librosa.resample(channel_data, orig_sr=sfreq, target_sr=self.target_sr) #Bandlimited sinc Interpolation
         channel_data_resampled = librosa.util.normalize(channel_data_resampled)
         sf.write(flac_filename, channel_data_resampled, self.target_sr, format='FLAC')
 
