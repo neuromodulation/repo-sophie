@@ -5,9 +5,11 @@ import pandas as pd
 import mne
 import numpy as np
 import re
-from datasets.data import BaseData
+from timeseries_transformer.mvts_transformer.src.datasets.data import BaseData
 from torch.utils.data import Dataset
-
+from datasets import Dataset as HFDataset, Audio
+import tempfile
+import soundfile as sf
 
 class TSRegressionArchive(BaseData):
     """
@@ -327,6 +329,62 @@ class ImputationDataset(Dataset):
         Returns the total number of unique samples in the dataset.
         """
         return len(self.all_IDs)
-
-
 cooler_data = {"bids": ImputationDataset}
+
+
+class DummyTS:
+    def __init__(self, num_samples=10, seq_len=16000, sampling_rate=16000, noise_std=0.1):
+        """
+        Creates a synthetic dataset mimicking an audio dataset structure.
+        Args:
+            num_samples: Number of audio samples in the dataset.
+            seq_len: Length of each audio sample (number of time steps).
+            sampling_rate: Sampling rate of the audio signals.
+            noise_std: Standard deviation of Gaussian noise added to the audio data.
+        """
+        self.num_samples = num_samples
+        self.seq_len = seq_len
+        self.sampling_rate = sampling_rate
+        self.noise_std = noise_std
+        self.data = self._create_data()
+        self.hf_dataset = self._create_hf_dataset()
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.hf_dataset[idx]    
+
+    def _create_data(self):
+       
+        data = []
+        for _ in range(self.num_samples):
+            t = np.linspace(0, 2 * np.pi, self.seq_len)
+            signal = np.sin(t) + np.random.normal(scale=self.noise_std, size=self.seq_len)
+            data.append({"audio": signal.astype(np.float32)}) 
+        return data
+
+    def _create_hf_dataset(self):
+
+        audio_data = [entry["audio"] for entry in self.data]
+        transcriptions = [None] * len(self.data)
+
+        data_dict = {
+            "audio": audio_data,
+            "transcription": transcriptions,
+        }
+
+        hf_dataset = HFDataset.from_dict(data_dict)
+
+        # for idx, entry in enumerate(hf_dataset["audio"]):
+        #     if isinstance(entry, dict) and "path" in entry:
+        #         hf_dataset["audio"][idx] = entry["path"]
+
+        # hf_dataset = hf_dataset.cast_column("audio", Audio(sampling_rate=self.sampling_rate))
+
+        return hf_dataset
+
+
+
+dummy_dataset = DummyTS(num_samples=100)
+

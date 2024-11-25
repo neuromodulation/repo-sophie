@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Union
+import numpy as np 
 
 import datasets
 import torch
@@ -31,7 +32,9 @@ from transformers.utils import send_example_telemetry
 
 from torch.utils.tensorboard import SummaryWriter, writer
 from torch.utils.data import DataLoader, TensorDataset
-from loadmp3 import BIDSBrainVisionDataset
+# from loadmp3 import BIDSBrainVisionDataset
+from new_load import DummyTS
+
 
 #product quantization in code
 
@@ -164,7 +167,7 @@ def parse_args():
     parser.add_argument(
         "--max_train_steps",
         type=int,
-        default=600
+        default=50
         
         ,
         help="Total number of training steps to perform. If provided, overrides num_train_epochs.",
@@ -279,15 +282,15 @@ def parse_args():
 
     return args
 
-def sliding_windows(data, window_size, sfreq):
-    step = int(window_size * sfreq)
-    data_length = len(data)
-    windows = []
+# def sliding_windows(data, window_size, sfreq):
+#     step = int(window_size * sfreq)
+#     data_length = len(data)
+#     windows = []
 
-    for x in range(0, data_length - step + 1, step):
-        stop = x + step
-        windows.append(data[x:stop])
-    return windows #list
+#     for x in range(0, data_length - step + 1, step):
+#         stop = x + step
+#         windows.append(data[x:stop])
+#     return windows #list
     
 writer = SummaryWriter(log_dir="logging_events_rest_data")
 @dataclass
@@ -340,15 +343,8 @@ class DataCollatorForWav2Vec2Pretraining:
         for feature in features:
             input_values = feature["input_values"]
 
-            windows = sliding_windows(
-                input_values,
-                self.window_size_secs,
-                self.feature_extractor.sampling_rate)
-            
-            for window in windows:
-                wind_input = self.feature_extractor(window, sampling_rate=self.feature_extractor.sampling_rate, return_tensors="pt")
-                wind_features.append({"input_values": wind_input.input_values[0]})
-        # reformat list to dict and set to pytorch format
+        wind_features.append({"input_values": torch.tensor(input_values[:32000])}) 
+
         batch = self.feature_extractor.pad(
             wind_features,
             padding=self.padding,
@@ -358,21 +354,16 @@ class DataCollatorForWav2Vec2Pretraining:
 
         device = batch["input_values"].device
         batch_size = batch["input_values"].shape[0]
-
+    
         mask_indices_seq_length = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
-        # make sure masked sequence length is a Python scalar
-        mask_indices_seq_length = int(mask_indices_seq_length)
+        mask_indices_seq_length = int(mask_indices_seq_length)  # Ensure scalar
 
-        # make sure that no loss is computed on padded inputs
         if batch.get("attention_mask") is not None:
-            # compute real output lengths according to convolution formula
             batch["sub_attention_mask"] = self.model._get_feature_vector_attention_mask(
                 mask_indices_seq_length, batch["attention_mask"]
             )
 
         features_shape = (batch_size, mask_indices_seq_length)
-
-        # sample randomly masked indices
         mask_time_indices = _compute_mask_indices(
             features_shape,
             self.mask_time_prob,
@@ -380,17 +371,18 @@ class DataCollatorForWav2Vec2Pretraining:
             attention_mask=batch.get("sub_attention_mask"),
         )
 
-        # sample negative indices
         sampled_negative_indices = _sample_negative_indices(
             features_shape,
             self.model.config.num_negatives,
             mask_time_indices=mask_time_indices,
         )
+
         batch["mask_time_indices"] = torch.tensor(mask_time_indices, dtype=torch.long, device=device)
         batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
 
         return batch
 
+        
 
 def multiply_grads(params, c):
     """Multiplies grads by a constant *c*."""
@@ -465,47 +457,17 @@ def main():
     # 1. Download and create train, validation dataset
     # We load all dataset configuration and datset split pairs passed in
     # ``args.dataset_config_names`` and ``args.dataset_split_names``
-    # datasets_splits = []
-    # for dataset_config_name, train_split_name in zip(args.dataset_config_names, args.dataset_split_names):
-    #     # load dataset
-    #     dataset_split = load_dataset(
-    #         args.dataset_name,
-    #         dataset_config_name,
-    #         split=train_split_name,
-    #         cache_dir=args.cache_dir,
-    #         trust_remote_code=True, #################################################################################################################################
-    #     )
-    #     datasets_splits.append(dataset_split)
-    #     datasets_splits ###############################################################################################################################
-
-    # # Next, we concatenate all configurations and splits into a single training dataset
-    # raw_datasets = DatasetDict()
-    # if len(datasets_splits) > 1:
-    #     raw_datasets["train"] = concatenate_datasets(datasets_splits).shuffle(seed=args.seed)
-    # else:
-    #     raw_datasets["train"] = datasets_splits[0]
-
-    # # Take ``args.validation_split_percentage`` from the training dataset for the validation_split_percentage
-    # num_validation_samples = raw_datasets["train"].num_rows * args.validation_split_percentage // 100
-
-    # if num_validation_samples == 0:
-    #     raise ValueError(
-    #         "`args.validation_split_percentage` is less than a single sample "
-    #         f"for {len(raw_datasets['train'])} training samples. Increase "
-    #         "`args.num_validation_split_percentage`. "
-    #     )
-
-    # raw_datasets["validation"] = raw_datasets["train"].select(range(num_validation_samples))
-    # raw_datasets["train"] = raw_datasets["train"].select(range(num_validation_samples, raw_datasets["train"].num_rows))
-###################################################################################################################################################
-
+    
     feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(args.model_name_or_path)
-    train_dataset = BIDSBrainVisionDataset(
-    directory="rest_data",
-    output_dir="rest_output_flac",
-    feature_extractor=feature_extractor,
-    target_sr=16000
-)
+    # train_dataset = BIDSBrainVisionDataset(
+    # directory="rest_data",
+    # output_dir="rest_output_flac",
+    # feature_extractor=feature_extractor,
+    # target_sr=16000
+    # )
+    train_dataset = DummyTS(num_samples=10, 
+                            seq_len=16000, 
+                            sampling_rate=16000)
 
     datasets_splits = []
     datasets_splits.append(train_dataset.hf_dataset)
@@ -536,9 +498,9 @@ def main():
 
 
     # make sure that dataset decodes audio with correct sampling rate
-    raw_datasets = raw_datasets.cast_column(
-        args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
-    )
+    # raw_datasets = raw_datasets.cast_column(
+    #     args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
+    # )
 
     # only normalized-inputs-training is supported
     if not feature_extractor.do_normalize:
@@ -551,10 +513,11 @@ def main():
     min_length = int(args.min_duration_in_seconds * feature_extractor.sampling_rate)
 
     def prepare_dataset(batch):
-        sample = batch[args.audio_column_name]
-
+        
+        # sample = np.array(batch[args.audio_column_name])
+        sample = batch["audio"]
         inputs = feature_extractor(
-            sample["array"], sampling_rate=sample["sampling_rate"], max_length=max_length, truncation=True
+            sample, sampling_rate=16000, max_length=max_length, truncation=True
         )
         input_values = inputs.input_values[0]
 
@@ -562,28 +525,22 @@ def main():
         batch["input_length"] = len(input_values)
 
         return batch
-
-    # load via mapped files via path
+   
     cache_file_names = None
     if args.train_cache_file_name is not None:
         cache_file_names = {"train": args.train_cache_file_name, "validation": args.validation_cache_file_name}
 
-    # load audio files into numpy arrays
+    # dummy = [{"audio": entry[0], "sampling_rate": entry[1]} for entry in train_dataset.data]
     with accelerator.main_process_first():
+        # vectorized_datasets = raw_datasets["train"]
+        # vectorized_datasets = {item: prepare_dataset(item) for item in raw_datasets["train"]}
+        # vectorized_datasets = map(prepare_dataset, vectorized_datasets)
         vectorized_datasets = raw_datasets.map(
             prepare_dataset,
             num_proc=args.preprocessing_num_workers,
             remove_columns=raw_datasets["train"].column_names,
             cache_file_names=cache_file_names,
         )
-
-        # if min_length > 0.0:
-        #     vectorized_datasets = vectorized_datasets.filter(
-        #         lambda x: any(length > min_length for length in x["input_lengths"]),
-        #         num_proc=args.preprocessing_num_workers,
-        #     )
-
-        vectorized_datasets = vectorized_datasets.remove_columns("input_length")
 
     # for large datasets it is advised to run the preprocessing on a ######################################################################
     # single machine first with ``args.preprocessing_only`` since there will mostly likely
