@@ -7,7 +7,7 @@ import numpy as np
 import re
 # from timeseries_transformer.mvts_transformer.src.datasets.data import BaseData
 from torch.utils.data import Dataset
-from datasets import Dataset as HFDataset, Audio
+# from datasets import Dataset as HFDataset, Audio
 import tempfile
 import soundfile as sf
 from multiprocessing import cpu_count
@@ -386,15 +386,77 @@ class DummyTS:
 
         hf_dataset = HFDataset.from_dict(data_dict)
 
-        # for idx, entry in enumerate(hf_dataset["audio"]):
-        #     if isinstance(entry, dict) and "path" in entry:
-        #         hf_dataset["audio"][idx] = entry["path"]
-
-        # hf_dataset = hf_dataset.cast_column("audio", Audio(sampling_rate=self.sampling_rate))
-
         return hf_dataset
+    
+# dummy_dataset = DummyTS(num_samples=100)
 
+import torch
+import numpy as np
+from torch.utils.data import Dataset
 
+class Dummy_imputation(Dataset):
+  
+    def __init__(self, num_samples=int(1000), seq_len=32000, feature_dim=8, mean_mask_length=3, masking_ratio=0.15,
+                 mode='separate', distribution='geometric', exclude_feats=None):
+        """
+        Args:
+            num_samples: Number of samples in the dummy dataset.
+            seq_len: Sequence length for each sample.
+            feature_dim: Number of features per time step.
+            mean_mask_length: Average length of masked segments.
+            masking_ratio: Fraction of data to mask.
+            mode: Masking mode ('separate' or 'block').
+            distribution: Mask length distribution ('geometric' or other).
+            exclude_feats: List of features/channels to exclude from masking.
+        """
+        super(Dummy_imputation, self).__init__()
 
-dummy_dataset = DummyTS(num_samples=100)
+        self.num_samples = num_samples
+        self.seq_len = seq_len
+        self.feature_dim = feature_dim
+        self.data = self._create_dummy_data()
+        self.IDs = list(range(num_samples))
 
+        self.masking_ratio = masking_ratio
+        self.mean_mask_length = mean_mask_length
+        self.mode = mode
+        self.distribution = distribution
+        self.exclude_feats = exclude_feats
+
+    def _create_dummy_data(self):
+        """
+        Creates a dummy dataset with sinusoidal patterns and Gaussian noise.
+        Returns:
+            A NumPy array of shape (num_samples, seq_len, feature_dim).
+        """
+        data = []
+        for _ in range(self.num_samples):
+            t = np.linspace(0, 2 * np.pi, self.seq_len)
+            signals = np.array([np.sin(t * (i + 1)) for i in range(self.feature_dim)]).T
+            noise = np.random.normal(scale=0.1, size=signals.shape)
+            data.append(signals + noise)
+        return np.stack(data)
+
+    def __getitem__(self, ind):
+       
+        X = self.data[ind] 
+        mask = noise_mask(X, self.masking_ratio, self.mean_mask_length, self.mode, self.distribution,
+                          self.exclude_feats)
+
+        return torch.from_numpy(X), torch.from_numpy(mask), self.IDs[ind]
+
+    def update(self):
+        """
+        Update masking parameters to progressively increase difficulty.
+        """
+        self.mean_mask_length = min(20, self.mean_mask_length + 1)
+        self.masking_ratio = min(1, self.masking_ratio + 0.05)
+
+    def __len__(self):
+        """
+        Returns the total number of samples in the dataset.
+        """
+        return len(self.IDs)
+    ##needs feature_df 
+    
+dummy = {"bids": Dummy_imputation}
