@@ -5,11 +5,21 @@ import pandas as pd
 import mne
 import numpy as np
 import re
-from timeseries_transformer.mvts_transformer.src.datasets.data import BaseData
+# from timeseries_transformer.mvts_transformer.src.datasets.data import BaseData
 from torch.utils.data import Dataset
 from datasets import Dataset as HFDataset, Audio
 import tempfile
 import soundfile as sf
+from multiprocessing import cpu_count
+
+class BaseData(object):
+
+    def set_num_processes(self, n_proc):
+
+        if (n_proc is None) or (n_proc <= 0):
+            self.n_proc = cpu_count()  # max(1, cpu_count() - 1)
+        else:
+            self.n_proc = min(n_proc, cpu_count())
 
 class TSRegressionArchive(BaseData):
     """
