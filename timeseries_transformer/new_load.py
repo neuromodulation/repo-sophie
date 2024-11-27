@@ -416,12 +416,17 @@ class Dummy_imputation(Dataset):
         self.feature_dim = feature_dim
         self.data = self._create_dummy_data()
         self.IDs = list(range(num_samples))
+        self.feature_df = self._create_feature_df()
+        self.all_IDs = self.feature_df.index.unique().tolist()
 
         self.masking_ratio = masking_ratio
         self.mean_mask_length = mean_mask_length
         self.mode = mode
         self.distribution = distribution
         self.exclude_feats = exclude_feats
+
+    def __call__(self):
+        print("data gets processed")    
 
     def _create_dummy_data(self):
         """
@@ -436,6 +441,21 @@ class Dummy_imputation(Dataset):
             noise = np.random.normal(scale=0.1, size=signals.shape)
             data.append(signals + noise)
         return np.stack(data)
+    
+    def _create_feature_df(self):
+        """
+        Generate a synthetic feature_df with random data.
+        Returns:
+            A pandas DataFrame with shape (num_samples * seq_len, feature_dim).
+        """
+        flat_data = self.data.reshape(self.num_samples * self.seq_len, self.feature_dim)
+
+        ids = [f"Sample_{i}" for i in range(self.num_samples) for _ in range(self.seq_len)]
+        
+        feature_df = pd.DataFrame(flat_data, columns=[f"Feature_{j}" for j in range(self.feature_dim)])
+        feature_df["FileID"] = ids
+        
+        return feature_df.set_index("FileID")
 
     def __getitem__(self, ind):
        
@@ -456,6 +476,7 @@ class Dummy_imputation(Dataset):
         """
         Returns the total number of samples in the dataset.
         """
+
         return len(self.IDs)
     ##needs feature_df 
     
