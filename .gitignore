@@ -33,7 +33,8 @@ timeseries_transformer/mvts_transformer/.idea/
 timeseries_transformer/mvts_transformer/test.py
 output_Transformer/
 not_important_stuff/
-
+npy_data/
+npy_output.pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

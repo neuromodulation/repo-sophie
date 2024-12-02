@@ -33,8 +33,8 @@ from transformers.utils import send_example_telemetry
 from torch.utils.tensorboard import SummaryWriter, writer
 from torch.utils.data import DataLoader, TensorDataset
 # from loadmp3 import BIDSBrainVisionDataset
-from new_load import DummyTS
-
+# from new_load import DummyTS
+from datasets import Dataset as HFDataset
 
 #product quantization in code
 
@@ -291,6 +291,52 @@ def parse_args():
 #         stop = x + step
 #         windows.append(data[x:stop])
 #     return windows #list
+
+class DummyTS:
+    def __init__(self, num_samples=10, seq_len=16000, sampling_rate=16000, noise_std=0.1):
+        """
+        Creates a synthetic dataset mimicking an audio dataset structure.
+        Args:
+            num_samples: Number of audio samples in the dataset.
+            seq_len: Length of each audio sample (number of time steps).
+            sampling_rate: Sampling rate of the audio signals.
+            noise_std: Standard deviation of Gaussian noise added to the audio data.
+        """
+        self.num_samples = num_samples
+        self.seq_len = seq_len
+        self.sampling_rate = sampling_rate
+        self.noise_std = noise_std
+        self.data = self._create_data()
+        self.hf_dataset = self._create_hf_dataset()
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.hf_dataset[idx]    
+
+    def _create_data(self):
+       
+        data = []
+        for _ in range(self.num_samples):
+            t = np.linspace(0, 2 * np.pi, self.seq_len)
+            signal = np.sin(t) + np.random.normal(scale=self.noise_std, size=self.seq_len)
+            data.append({"audio": signal.astype(np.float32)}) 
+        return data
+
+    def _create_hf_dataset(self):
+
+        audio_data = [entry["audio"] for entry in self.data]
+        transcriptions = [None] * len(self.data)
+
+        data_dict = {
+            "audio": audio_data,
+            "transcription": transcriptions,
+        }
+
+        hf_dataset = HFDataset.from_dict(data_dict)
+
+        return hf_dataset
     
 writer = SummaryWriter(log_dir="logging_events_rest_data")
 @dataclass

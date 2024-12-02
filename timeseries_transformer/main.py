@@ -30,15 +30,15 @@ from torch.utils.tensorboard import SummaryWriter
 # Project modules
 from options import Options
 from running import setup, pipeline_factory, validate, check_progress, NEG_METRICS
-from utils import utils
-from data import Normalizer
+from mvts_transformer.src.utils import utils
+from mvts_transformer.src.datasets.data import Normalizer
 from datasplit import split_dataset
 from ts_transformer import model_factory
 from loss import get_loss_module
 from optimizers import get_optimizer
 
 # print(sys.path)
-from new_load import Dummy_imputation
+from new_load import newImputationDataset, npy_data
 
 def main(config):
 
@@ -64,7 +64,9 @@ def main(config):
     # Build data
     logger.info("Loading and preprocessing data ...")
     ###################################################################################################
-    data_class = Dummy_imputation(num_samples=10)
+    # data_class = Dummy_imputation(num_samples=10)
+    npy_data(root_dir="npy_data", output_file="npy_output.pkl", masking_ratio=0.15, mean_mask_length=3, mode='separate', distribution='geometric', exclude_feats=None)
+    data_class = {"bids": newImputationDataset(preprocessed_file="npy_output.pkl")}
     # my_data = data_class(config['data_dir'])
     ############################################################################################
     feat_dim = data_class.feature_df.shape[1]  # dimensionality of data features

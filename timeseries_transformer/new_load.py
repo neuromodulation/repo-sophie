@@ -11,6 +11,9 @@ from torch.utils.data import Dataset
 import tempfile
 import soundfile as sf
 from multiprocessing import cpu_count
+import pickle
+from tqdm import tqdm
+
 
 class BaseData(object):
 
@@ -390,10 +393,6 @@ class DummyTS:
     
 # dummy_dataset = DummyTS(num_samples=100)
 
-import torch
-import numpy as np
-from torch.utils.data import Dataset
-
 class Dummy_imputation(Dataset):
   
     def __init__(self, num_samples=int(1000), seq_len=32000, feature_dim=8, mean_mask_length=3, masking_ratio=0.15,
@@ -480,4 +479,107 @@ class Dummy_imputation(Dataset):
         return len(self.IDs)
     ##needs feature_df 
     
-dummy = {"bids": Dummy_imputation}
+# dummy = {"bids": Dummy_imputation}
+
+def npy_data(
+    root_dir, output_file, masking_ratio, mean_mask_length, mode, distribution, exclude_feats):
+    """
+    Preprocess `.npy` files, compute masks, and save the resulting dataset with metadata for use with `ImputationDataset`.
+    Args:
+        root_dir: Directory containing `.npy` files.
+        output_file: Path to save the preprocessed data.
+        masking_ratio: Fraction of data to mask.
+        mean_mask_length: Average length of masked segments.
+        mode: Masking mode ('separate' or 'block').
+        distribution: Mask length distribution ('geometric' or other).
+        exclude_feats: List of features/channels to exclude from masking.
+    """
+    all_data = {}
+    feature_df = []
+
+    for file_name in tqdm(os.listdir(root_dir), desc="Preprocessing .npy files"):
+        if file_name.endswith('.npy'):
+            file_path = os.path.join(root_dir, file_name)
+            key = os.path.splitext(file_name)[0]
+
+            array = np.load(file_path)
+            if array.shape[1] != 4:
+                raise ValueError(f"File {file_name} does not have 4 channel")
+            
+            transposed = array.T
+            time_points = transposed.shape[1]
+            clips = time_points // 250
+            clipped = transposed[:, :clips * 250].reshape(4, clips, 250)
+
+            for i in range(clips):
+                clip = clipped[:, i, :]
+                clip_key = f"{key}_{i}"
+
+                mask = noise_mask(clip.T, masking_ratio, mean_mask_length, mode, distribution, exclude_feats)
+
+                all_data[clip_key] = {"data": array, "mask": mask.T}
+                feature_df.append({
+                    "FileID": clip_key,
+                    "Timestamp": i,
+                    clip[0].mean()
+                })
+
+    with open(output_file, 'wb') as f:
+        pickle.dump({"data": all_data, "metadata": pd.DataFrame(metadata)}, f)
+
+    print(f"Preprocessed data saved to {output_file}")
+
+
+class newImputationDataset(Dataset):
+    """
+    Dataset class to handle preprocessed `.npy` data with masks and metadata.
+    """
+    def __init__(self, preprocessed_file):
+        """
+        Args:
+            preprocessed_file: Path to the pickle file containing preprocessed data and metadata.
+        """
+        super(newImputationDataset, self).__init__()
+        with open(preprocessed_file, 'rb') as f:
+            dataset = pickle.load(f)
+
+        self.data = dataset["data"]
+        self.feature_df = pd.concat(self.data.values(), ignore_index=True)
+        self.all_IDs = list(self.data.keys()) 
+
+    def __getitem__(self, ind):
+        """
+        Retrieve the preprocessed sample by index.
+        Args:
+            ind: Integer index of the sample.
+        Returns:
+            X: (4, 250) tensor of multivariate time series data.
+            mask: (4, 250) tensor of the corresponding mask.
+            ID: ID of the file/sample.
+        """
+        ID = self.all_IDs[ind]
+        sample = self.data[ID]
+        X = torch.from_numpy(sample['data']).float()
+        mask = torch.from_numpy(sample['mask']).bool()
+        return X, mask, ID
+
+    def __len__(self):
+        return len(self.all_IDs)
+
+    def update(self):
+        self.mean_mask_length = min(20, self.mean_mask_length + 1)
+        self.masking_ratio = min(1, self.masking_ratio + 0.05)
+
+
+npy_data(
+    root_dir="npy_data",
+    output_file="npy_output.pkl",
+    masking_ratio=0.15,
+    mean_mask_length=3,
+    mode='separate',
+    distribution='geometric',
+    exclude_feats=None
+)
+
+dataset = newImputationDataset(preprocessed_file="npy_output.pkl")
+dummy = {"bids": newImputationDataset(preprocessed_file="npy_output.pkl")}
