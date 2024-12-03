@@ -516,16 +516,10 @@ def npy_data(
                 clip_key = f"{key}_{i}"
 
                 mask = noise_mask(clip.T, masking_ratio, mean_mask_length, mode, distribution, exclude_feats)
-
-                all_data[clip_key] = {"data": array, "mask": mask.T}
-                feature_df.append({
-                    "FileID": clip_key,
-                    "Timestamp": i,
-                    clip[0].mean()
-                })
-
-    with open(output_file, 'wb') as f:
-        pickle.dump({"data": all_data, "metadata": pd.DataFrame(metadata)}, f)
+                
+            with open(output_file, 'wb') as f:
+                pickle.dump({"feature_df": pd.concat(all_data.values), "FileID": clip_key, "mask": mask}, f) #"data": all_data, 
+        #'builtin_function_or_method' object is not iterable
 
     print(f"Preprocessed data saved to {output_file}")
 
@@ -544,7 +538,7 @@ class newImputationDataset(Dataset):
             dataset = pickle.load(f)
 
         self.data = dataset["data"]
-        self.feature_df = pd.concat(self.data.values(), ignore_index=True)
+        # self.feature_df = pd.concat(self.data.values(), ignore_index=True)
         self.all_IDs = list(self.data.keys()) 
 
     def __getitem__(self, ind):
@@ -583,3 +577,7 @@ npy_data(
 
 dataset = newImputationDataset(preprocessed_file="npy_output.pkl")
 dummy = {"bids": newImputationDataset(preprocessed_file="npy_output.pkl")}
+
+#fileid x channel x time; not shuffeling ids! 
+# 250 Hz sf, also 250 Datenpunkte/sec; also auhc shape 4, 250 bei 1s frames
+
