@@ -71,7 +71,8 @@ import pandas as pd
 import mne
 import pickle
 from multiprocessing import cpu_count
-
+from torch.utils.data import Dataset
+import os
 
 class BaseData(object):
 
@@ -82,7 +83,7 @@ class BaseData(object):
         else:
             self.n_proc = min(n_proc, cpu_count())
 
-class MyNewDataClass(BaseData):
+class npy_pre_save(BaseData, Dataset):
     """
     Dataset class for welding dataset.
     Attributes:
@@ -95,28 +96,34 @@ class MyNewDataClass(BaseData):
             (Moreover, the script argument overrides this attribute).
     """
 
-    def __init__(self, root_dir, file_list=None, pattern=None, n_proc=1, limit_size=None, config=None):
+    def __init__(self, root_dir, file_list=None, pattern=None, n_proc=1, limit_size=None, config=None, preprocessed="preprocessed.pkl"):
+        super().__init__()
         self.set_num_processes(n_proc=n_proc)
 
         self.max_seq_len = 250
-        self.all_df = self.load_npy()
-        self.all_df = self.all_df.set_index('ID')
-        self.all_IDs = self.all_df.index.unique()
-
+        self.preprocessed = preprocessed
+        if os.path.exists(self.preprocessed):
+            with open(self.preprocessed, 'rb') as f:
+                self.feature_dict = pickle.load(f)
+            print(f"Loaded preprocessed data from {self.preprocessed}")
+        else:
+            self.all_df = self.load_npy()
+            self.all_df = self.all_df.set_index('ID')
+            self.all_IDs = self.all_df.index.unique()
+      
         # Limit dataset size if specified
-        if limit_size is not None:
-            if limit_size > 1:
-                limit_size = int(limit_size)
-            else:  # Interpret as proportion if in (0, 1]
-                limit_size = int(limit_size * len(self.all_IDs))
-            self.all_IDs = self.all_IDs[:limit_size]
-            self.all_df = self.all_df.loc[self.all_IDs]
+            if limit_size is not None:
+                if limit_size > 1:
+                    limit_size = int(limit_size)
+                else:  # Interpret as proportion if in (0, 1]
+                    limit_size = int(limit_size * len(self.all_IDs))
+                self.all_IDs = self.all_IDs[:limit_size]
+                self.all_df = self.all_df.loc[self.all_IDs]
 
-        self.feature_names = list(self.all_df.columns)
-        self.feature_df = self.all_df[self.feature_names]
 
-        self.feature_dict = self.to_dict()
-
+            self.feature_names = [col for col in self.all_df.columns if col.startswith("channel_")]
+            self.save_preprocessed_dict()
+       
     def to_dict(self):
         """
         Converts the DataFrame to a dictionary indexed by IDs.
@@ -128,16 +135,24 @@ class MyNewDataClass(BaseData):
             feature_dict[ID] = group.reset_index(drop=True)
         return feature_dict
 
-    def save_preprocessed_dict(self, file_path="preprocessed_data.pkl"):
+    def save_preprocessed_dict(self):
         """
         Saves the preprocessed dictionary as a pickle file.
         Args:
             file_path: Path to save the dictionary.
         """
-        with open(file_path, 'wb') as f:
-            pickle.dump(self.feature_dict, f)
+        with open(self.preprocessed, 'wb') as f:
+            pickle.dump(self.all_df, f)
+        print(f"saved to {self.preprocessed}")    
         # logger.info(f"Preprocessed data dictionary saved to {file_path}.")
 
+    def __len__(self):
+        return len(self.feature_dict)    
+    
+    def __getitem__(self, idx):
+        ID = list(self.feature_dict.keys())[idx]
+        return self.feature_dict[ID], ID
+    
     def load_all_mockup_random(self):
         """
         Mockup method to generate random data for testing.
@@ -163,6 +178,7 @@ class MyNewDataClass(BaseData):
         raw.pick([ch for ch in raw.ch_names if "ECOG" in ch])
         data = raw.get_data()
         all_df = pd.DataFrame(data.T, columns=raw.ch_names)
+        # all_df["feature_df"] = pd.concat(self.data.values(), ignore_index=True)
 
         ID_col = np.repeat(np.arange(1, all_df.shape[0] // self.max_seq_len + 1), self.max_seq_len)
         all_df = all_df.iloc[:len(ID_col)]
@@ -175,35 +191,32 @@ class MyNewDataClass(BaseData):
         return all_df
 
     def load_npy(self):
-        CLUSTER = True
-        if CLUSTER:
-            data = np.load("npy_data/all_subs.npy").astype(np.float64)
+        data = np.load("npy_data/sub_rcs02l.npy").astype(np.float64)
 
-            total_samples = data.size
-            target_size = 4 * self.max_seq_len 
-            if total_samples % target_size != 0:
-                raise ValueError(
-                    f"Cannot reshape array of size {total_samples} into (ID, 4, {self.max_seq_len}). "
-                    f"Size must be divisible by {target_size}."
-                )
+        total_samples = data.size
+        num_elements_per_sample = 4 * self.max_seq_len 
 
-            num_ids = total_samples // target_size
-            reshaped_data = data.reshape(num_ids, 4, self.max_seq_len)
+        if total_samples % num_elements_per_sample != 0:
+            valid_size = (total_samples // num_elements_per_sample) * num_elements_per_sample
+            print(f"Clipping data from size {total_samples} to {valid_size} to fit 1s segments.")
+            data = data[:valid_size]
 
-            all_df = pd.DataFrame(
-                reshaped_data.reshape(-1, 4),
-                columns=[f"channel_{i}" for i in range(4)]
-            )
-            all_df['ID'] = np.repeat(np.arange(1, num_ids + 1), self.max_seq_len)
-            columns_to_standardize = all_df.columns[:-1]
+        num_ids = total_samples // num_elements_per_sample
+        reshaped_data = data.reshape(num_ids, 4, self.max_seq_len)
 
-            all_df[columns_to_standardize] = all_df.groupby('ID')[columns_to_standardize].transform(
-                lambda x: np.clip((x - x.mean()) / x.std(), -9, 9)
-            )
-        else:
-            all_df = pd.read_csv("rcs02l_standardized.csv")
+        all_df = pd.DataFrame(
+            reshaped_data.reshape(-1, 4),
+            columns=[f"channel_{i}" for i in range(4)]
+        )
+        all_df["feature_df"] = pd.concat(all_df, ignore_index=True)
+        all_df['ID'] = np.repeat(np.arange(1, num_ids + 1), self.max_seq_len)
+        columns_to_standardize = all_df.columns[:-1]
 
-        return all_df
+        all_df[columns_to_standardize] = all_df.groupby('ID')[columns_to_standardize].transform(
+            lambda x: np.clip((x - x.mean()) / x.std(), -9, 9)
+        )
+   
+        return all_df #shape (16210000, 5) with sub_rcs02l.npy: checks out with num_ids=64840*250; 5 columns ['channel_0', 'channel_1', 'channel_2', 'channel_3', 'ID'], (all_df._data.shape)=(5, 16210000)
 
 
-p = MyNewDataClass(root_dir="npy_data")
+p = npy_pre_save(root_dir="npy_data")

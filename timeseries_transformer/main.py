@@ -38,7 +38,7 @@ from loss import get_loss_module
 from optimizers import get_optimizer
 
 # print(sys.path)
-from new_load import newImputationDataset, npy_data
+ # npy_pre_save, p
 
 def main(config):
 
@@ -65,10 +65,18 @@ def main(config):
     logger.info("Loading and preprocessing data ...")
     ###################################################################################################
     # data_class = Dummy_imputation(num_samples=10)
-    npy_data(root_dir="npy_data", output_file="npy_output.pkl", masking_ratio=0.15, mean_mask_length=3, mode='separate', distribution='geometric', exclude_feats=None)
-    data_class = {"bids": newImputationDataset(preprocessed_file="npy_output.pkl")}
+    # npy_data(root_dir="npy_data", output_file="npy_output.pkl", masking_ratio=0.15, mean_mask_length=3, mode='separate', distribution='geometric', exclude_feats=None)
+    # data_class = p# {"bids": newImputationDataset(preprocessed_file="npy_output.pkl")}
     # my_data = data_class(config['data_dir'])
     ############################################################################################
+    if os.path.exists("preprocessed_data.pkl"):
+            with open("preprocessed_data.pkl", 'rb') as f:
+                data_class = pickle.load(f)
+            print(f"Loaded preprocessed data from {"preprocessed_data.pkl"}")
+    else:
+        from yet_more_loading import p
+        data_class = p
+
     feat_dim = data_class.feature_df.shape[1]  # dimensionality of data features
     if config['task'] == 'classification':
         validation_method = 'StratifiedShuffleSplit'
