@@ -35,6 +35,8 @@ output_Transformer/
 not_important_stuff/
 npy_data/
 npy_output.pkl
+all_subs.npy 
+sub_rcs02l.npy
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
